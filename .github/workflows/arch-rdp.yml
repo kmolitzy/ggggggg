@@ -1,4 +1,4 @@
-name: Arch Linux RDP
+name: Arch Linux Modern RDP
 
 on:
   workflow_dispatch:
@@ -32,7 +32,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq xrdp netcat-openbsd
 
-          # Konfigurasi xrdp agar langsung auto-login ke Arch VNC di port 5901 tanpa jendela prompt
+          # Konfigurasi xrdp agar langsung auto-login ke Arch Linux di port 5901 tanpa dialog prompt
           sudo python3 - <<'PY'
           from pathlib import Path
           p = Path('/etc/xrdp/xrdp.ini')
@@ -54,7 +54,7 @@ jobs:
 
           sudo systemctl restart xrdp
 
-      - name: 3. Bangun & Jalankan Desktop Arch Linux Murni
+      - name: 3. Bangun & Jalankan Desktop Arch Linux Modern (KDE Plasma 6)
         run: |
           cat <<'EOF' > entrypoint.sh
           #!/bin/bash
@@ -63,10 +63,52 @@ jobs:
           mkdir -p /tmp/.X11-unix
           chmod 1777 /tmp/.X11-unix
 
-          # Jalankan Xvnc langsung (port 5901, display :1)
-          su - archuser -c "Xvnc :1 -geometry 1280x720 -depth 24 -rfbport 5901 -SecurityTypes None,TLSNone -pn" > /home/archuser/xvnc.log 2>&1 &
+          # 1. Unduh & Pasang Wallpaper Sasuke (Pinterest 4K)
+          mkdir -p /usr/share/wallpapers
+          echo "Mengunduh wallpaper Sasuke..."
+          curl -sSL "https://i.pinimg.com/originals/9f/37/33/9f37339f9b9de1081394d746d96d52e3.jpg" -o /usr/share/wallpapers/sasuke.jpg || true
 
-          # Tunggu sampai socket /tmp/.X11-unix/X1 dan port 5901 siap
+          mkdir -p /home/archuser/Pictures
+          cp /usr/share/wallpapers/sasuke.jpg /home/archuser/Pictures/sasuke.jpg 2>/dev/null || true
+
+          # Ganti semua fallback default wallpaper agar otomatis menampilkan Sasuke
+          find /usr/share/wallpapers -type f \( -name "*.jpg" -o -name "*.png" \) ! -name "sasuke.jpg" 2>/dev/null | while read f; do
+            ln -sf /usr/share/wallpapers/sasuke.jpg "$f" 2>/dev/null || true
+          done
+
+          # 2. Konfigurasi Tema Modern (Breeze Dark / Cyber) & Wallpaper di KDE Plasma 6
+          mkdir -p /home/archuser/.config
+
+          cat <<'CONFIG' > /home/archuser/.config/kdeglobals
+          [General]
+          ColorScheme=BreezeDark
+          Name=Breeze Dark
+          CONFIG
+
+          cat <<'CONFIG' > /home/archuser/.config/kwinrc
+          [Compositing]
+          Enabled=false
+          CONFIG
+
+          cat <<'CONFIG' > /home/archuser/.config/plasma-org.kde.plasma.desktop-appletsrc
+          [Containments][1]
+          formfactor=0
+          immutability=1
+          lastScreen=0
+          location=0
+          plugin=org.kde.plasma.folder
+          wallpaperplugin=org.kde.image
+
+          [Containments][1][Wallpaper][org.kde.image][General]
+          Image=file:///usr/share/wallpapers/sasuke.jpg
+          CONFIG
+
+          chown -R archuser:archuser /home/archuser
+
+          # 3. Jalankan Display Server TigerVNC di Port 5901
+          su - archuser -c "Xvnc :1 -geometry 1280x720 -depth 24 -rfbport 5901 -SecurityTypes None -pn" > /home/archuser/xvnc.log 2>&1 &
+
+          # Tunggu socket display :1 siap
           for i in {1..30}; do
             if [ -S /tmp/.X11-unix/X1 ]; then
               echo "Xvnc display :1 siap!"
@@ -75,35 +117,59 @@ jobs:
             sleep 0.5
           done
 
-          # Jalankan XFCE4 desktop session dengan dbus
-          su - archuser -c "DISPLAY=:1 dbus-run-session startxfce4" > /home/archuser/xfce.log 2>&1 &
+          # 4. Jalankan Sesi Desktop Modern KDE Plasma 6
+          su - archuser -c "
+            export DISPLAY=:1
+            export XDG_CURRENT_DESKTOP=KDE
+            export KDE_FULL_SESSION=true
+            export XDG_SESSION_TYPE=x11
+            export DESKTOP_SESSION=plasma
+            export LIBGL_ALWAYS_SOFTWARE=1
+            export QT_QUICK_BACKEND=software
+            
+            if command -v startplasma-x11 >/dev/null 2>&1; then
+              dbus-run-session startplasma-x11
+            elif command -v startkde >/dev/null 2>&1; then
+              dbus-run-session startkde
+            else
+              dbus-run-session plasma-desktop
+            fi
+          " > /home/archuser/plasma.log 2>&1 &
 
-          # Pantau log
+          # Terapkan wallpaper via CLI tools setelah Plasma siap
+          (
+            sleep 10
+            su - archuser -c "DISPLAY=:1 plasma-apply-wallpaperimage /usr/share/wallpapers/sasuke.jpg" 2>/dev/null || true
+          ) &
+
           sleep 2
-          exec tail -f /home/archuser/xvnc.log /home/archuser/xfce.log
+          exec tail -f /home/archuser/xvnc.log /home/archuser/plasma.log
           EOF
           chmod +x entrypoint.sh
 
           cat <<'EOF' > Dockerfile
           FROM archlinux:latest
 
-          # Update mirror dan pasang XFCE, TigerVNC, terminal, font, tools
+          # Update repositori resmi Arch Linux & Pasang Desktop KDE Plasma 6 Modern + Tools Populer
           RUN pacman -Syu --noconfirm && \
               pacman -S --noconfirm \
-                xfce4 \
-                xfce4-terminal \
+                plasma-desktop \
+                konsole \
+                dolphin \
                 tigervnc \
+                dbus \
                 sudo \
+                fastfetch \
+                curl \
+                wget \
                 ttf-dejavu \
                 ttf-liberation \
-                which \
-                dbus \
-                fastfetch \
                 firefox \
-                iproute2
+                iproute2 && \
+              pacman -Scc --noconfirm
 
-          # Buat user archuser
-          RUN useradd -m -s /bin/bash archuser && \
+          # Buat user archuser dengan hak akses sudo penuh
+          RUN useradd -m -s /bin/bash -u 1000 archuser && \
               echo "archuser:pochi@333" | chpasswd && \
               echo "archuser ALL=(ALL) ALL" >> /etc/sudoers
 
@@ -112,11 +178,11 @@ jobs:
           EOF
 
           docker build -t arch-rdp .
-          docker run -d --name arch-desktop --net=host arch-rdp
+          docker run -d --name arch-desktop --net=host --privileged arch-rdp
 
-          # Tunggu dan pastikan port 5901 benar-benar listening di host
-          echo "Memverifikasi port 5901..."
-          for i in {1..20}; do
+          # Tunggu dan pastikan port 5901 VNC aktif
+          echo "Memverifikasi port 5901 VNC Arch Linux..."
+          for i in {1..30}; do
             if nc -z 127.0.0.1 5901; then
               echo "Port 5901 VNC Arch Linux AKTIF & SIAP!"
               break
@@ -124,23 +190,25 @@ jobs:
             sleep 1
           done
 
-          # Cek status container & log
+          # Cek status container
           docker ps
           docker logs arch-desktop || true
 
       - name: 4. Informasi Akses
         run: |
           echo "=========================================="
-          echo "      ARCH LINUX RDP SUDAH AKTIF          "
+          echo "    ARCH LINUX MODERN RDP SUDAH AKTIF     "
           echo "=========================================="
           echo "IP Tailscale : $TAILSCALE_IP"
           echo "Port         : 3389"
-          echo "OS           : Arch Linux (Rolling Release)"
-          echo "Desktop      : XFCE4"
+          echo "OS           : Arch Linux (Rolling Release Terbaru)"
+          echo "Desktop      : KDE Plasma 6 (Modern Dark Mode)"
+          echo "Wallpaper    : Sasuke Uchiha (Pinterest 4K)"
+          echo "User         : archuser"
+          echo "Password     : pochi@333"
           echo "=========================================="
 
           while true; do
-            echo "[$(date '+%H:%M:%S')] Arch Linux Active..."
+            echo "[$(date '+%H:%M:%S')] Arch Linux Modern Active..."
             sleep 60
           done
-          
