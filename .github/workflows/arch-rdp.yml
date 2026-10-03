@@ -83,7 +83,10 @@ jobs:
 
           # 3. Jalankan Desktop Sesi Resmi XFCE Bawaan Penuh (Persis seperti laptop / PC asli!)
           echo "Memulai sesi desktop resmi Arch Linux (xfce4-session)..."
-          exec dbus-run-session xfce4-session
+          while true; do
+            dbus-run-session xfce4-session 2>&1 || true
+            sleep 2
+          done
           EOF
           chmod +x entrypoint.sh
 
@@ -108,7 +111,16 @@ jobs:
                 xorg-xrandr \
                 ttf-dejavu \
                 ttf-liberation \
+                adwaita-icon-theme \
+                hicolor-icon-theme \
+                papirus-icon-theme \
+                archlinux-wallpaper \
+                shared-mime-info \
+                gdk-pixbuf2 \
+                librsvg \
                 iproute2 && \
+              gdk-pixbuf-query-loaders --update-cache 2>/dev/null || true && \
+              update-mime-database /usr/share/mime 2>/dev/null || true && \
               pacman -Scc --noconfirm
 
           RUN useradd -m -s /bin/bash -u 1000 archuser && \
@@ -144,7 +156,7 @@ jobs:
           done
 
           # Cek status container & log
-          sleep 3
+          sleep 4
           docker ps
           docker logs arch-desktop || true
 
