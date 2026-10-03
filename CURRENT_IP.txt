@@ -1,3 +1,4 @@
-Runner Active: arch-runner-37115010576
-Buka aplikasi Tailscale di Android, cari perangkat: arch-runner-37115010576
+Runner Active: arch-runner-37115616207
+Buka aplikasi Tailscale di Android, cari perangkat: arch-runner-37115616207
 Copy IP Tailscale perangkat tersebut (contoh: 100.x.y.z) lalu buka di 0X1!
+Download Aplikasi 0X1 langsung di browser HP: http://<IP-Tailscale>:8080
