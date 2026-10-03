@@ -1,4 +1,4 @@
-name: Kali Linux Modern RDP
+name: Kali Linux Official XFCE RDP
 
 on:
   workflow_dispatch:
@@ -54,7 +54,7 @@ jobs:
 
           sudo systemctl restart xrdp
 
-      - name: 3. Bangun & Jalankan Desktop Kali Linux Modern (KDE Plasma)
+      - name: 3. Bangun & Jalankan Desktop Kali Linux Murni (XFCE Official ORI + OpenCode + 9Router)
         run: |
           cat <<'EOF' > entrypoint.sh
           #!/bin/bash
@@ -63,50 +63,68 @@ jobs:
           mkdir -p /tmp/.X11-unix
           chmod 1777 /tmp/.X11-unix
 
-          # 1. Download & Pasang Wallpaper Sasuke (Pinterest)
-          mkdir -p /usr/share/wallpapers
-          echo "Mengunduh wallpaper Sasuke..."
-          curl -sSL "https://i.pinimg.com/originals/9f/37/33/9f37339f9b9de1081394d746d96d52e3.jpg" -o /usr/share/wallpapers/sasuke.jpg || true
+          # 1. Pastikan direktori Desktop dan konfigurasi XFCE milik user kali
+          mkdir -p /home/kali/Desktop
+          mkdir -p /home/kali/.config/xfce4/xfconf/xfce-perchannel-xml
 
-          mkdir -p /home/kali/Pictures
-          cp /usr/share/wallpapers/sasuke.jpg /home/kali/Pictures/sasuke.jpg 2>/dev/null || true
+          # 2. Buat Shortcut Desktop untuk OpenCode & 9Router
+          cat <<'DESK' > /home/kali/Desktop/opencode.desktop
+          [Desktop Entry]
+          Version=1.0
+          Type=Application
+          Name=OpenCode AI Agent
+          Comment=Terminal-native AI Coding Agent
+          Exec=xfce4-terminal --title="OpenCode AI Agent" --command="bash -c 'echo \"=== OpenCode AI Agent ===\"; opencode; exec bash'"
+          Icon=utilities-terminal
+          Path=/home/kali
+          Terminal=false
+          Categories=Development;Utility;
+          DESK
 
-          # Ganti semua fallback default wallpaper agar otomatis menampilkan Sasuke
-          find /usr/share/wallpapers -type f \( -name "*.jpg" -o -name "*.png" \) ! -name "sasuke.jpg" 2>/dev/null | while read f; do
-            ln -sf /usr/share/wallpapers/sasuke.jpg "$f" 2>/dev/null || true
-          done
+          cat <<'DESK' > /home/kali/Desktop/9router.desktop
+          [Desktop Entry]
+          Version=1.0
+          Type=Application
+          Name=9Router AI Gateway
+          Comment=Open-source AI Router & Proxy for 60+ AI Providers
+          Exec=xfce4-terminal --title="9Router AI Server" --command="bash -c 'echo \"=== 9Router Server ===\"; 9router; exec bash'"
+          Icon=network-wired
+          Path=/home/kali
+          Terminal=false
+          Categories=Network;Development;
+          DESK
 
-          # 2. Konfigurasi Tema Modern (Breeze / Kali Dark) & Wallpaper di KDE Plasma
-          mkdir -p /home/kali/.config
+          cat <<'DESK' > /home/kali/Desktop/kali-terminal.desktop
+          [Desktop Entry]
+          Version=1.0
+          Type=Application
+          Name=Kali Terminal
+          Comment=Terminal resmi Kali Linux
+          Exec=xfce4-terminal
+          Icon=utilities-terminal
+          Path=/home/kali
+          Terminal=false
+          Categories=System;
+          DESK
 
-          cat <<'CONFIG' > /home/kali/.config/kdeglobals
-          [General]
-          ColorScheme=BreezeDark
-          Name=Breeze Dark
-          CONFIG
+          cat <<'DESK' > /home/kali/Desktop/firefox.desktop
+          [Desktop Entry]
+          Version=1.0
+          Type=Application
+          Name=Firefox ESR
+          Comment=Web Browser
+          Exec=firefox-esr
+          Icon=firefox-esr
+          Path=/home/kali
+          Terminal=false
+          Categories=Network;
+          DESK
 
-          cat <<'CONFIG' > /home/kali/.config/kwinrc
-          [Compositing]
-          Enabled=false
-          CONFIG
-
-          cat <<'CONFIG' > /home/kali/.config/plasma-org.kde.plasma.desktop-appletsrc
-          [Containments][1]
-          formfactor=0
-          immutability=1
-          lastScreen=0
-          location=0
-          plugin=org.kde.plasma.folder
-          wallpaperplugin=org.kde.image
-
-          [Containments][1][Wallpaper][org.kde.image][General]
-          Image=file:///usr/share/wallpapers/sasuke.jpg
-          CONFIG
-
+          chmod +x /home/kali/Desktop/*.desktop
           chown -R kali:kali /home/kali
 
           # 3. Jalankan Display Server TigerVNC di Port 5901
-          su - kali -c "Xvnc :1 -geometry 1280x720 -depth 24 -rfbport 5901 -SecurityTypes None -pn" > /home/kali/xvnc.log 2>&1 &
+          su - kali -c "Xvnc :1 -geometry 1366x768 -depth 24 -rfbport 5901 -SecurityTypes None -pn" > /home/kali/xvnc.log 2>&1 &
 
           # Tunggu socket display :1 siap
           for i in {1..30}; do
@@ -117,33 +135,33 @@ jobs:
             sleep 0.5
           done
 
-          # 4. Jalankan Sesi Desktop Modern KDE Plasma
+          # 4. Jalankan Sesi Desktop Resmi Kali Linux (XFCE4 Original)
           su - kali -c "
             export DISPLAY=:1
-            export XDG_CURRENT_DESKTOP=KDE
-            export KDE_FULL_SESSION=true
+            export XDG_CURRENT_DESKTOP=XFCE
+            export DESKTOP_SESSION=xfce
             export XDG_SESSION_TYPE=x11
-            export DESKTOP_SESSION=plasma
-            export LIBGL_ALWAYS_SOFTWARE=1
-            export QT_QUICK_BACKEND=software
-            
-            if command -v startplasma-x11 >/dev/null 2>&1; then
-              dbus-run-session startplasma-x11
-            elif command -v startkde >/dev/null 2>&1; then
-              dbus-run-session startkde
-            else
-              dbus-run-session plasma-desktop
-            fi
-          " > /home/kali/plasma.log 2>&1 &
+            dbus-run-session startxfce4
+          " > /home/kali/xfce.log 2>&1 &
 
-          # Terapkan wallpaper via CLI tools setelah Plasma siap
+          # Terapkan tema resmi Kali-Dark dan wallpaper resmi Kali
           (
-            sleep 10
-            su - kali -c "DISPLAY=:1 plasma-apply-wallpaperimage /usr/share/wallpapers/sasuke.jpg" 2>/dev/null || true
+            sleep 5
+            su - kali -c "
+              export DISPLAY=:1
+              xfconf-query -c xsettings -p /Net/ThemeName -s 'Kali-Dark' 2>/dev/null || true
+              xfconf-query -c xsettings -p /Net/IconThemeName -s 'Flat-Remix-Blue-Dark' 2>/dev/null || true
+              
+              # Set Kali official wallpaper
+              KALI_WP=\$(find /usr/share/backgrounds -type f \( -name '*.png' -o -name '*.jpg' \) 2>/dev/null | grep -i kali | head -n 1)
+              if [ -n \"\$KALI_WP\" ]; then
+                xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitor0/workspace0/last-image -s \"\$KALI_WP\" 2>/dev/null || true
+              fi
+            " 2>/dev/null || true
           ) &
 
           sleep 2
-          exec tail -f /home/kali/xvnc.log /home/kali/plasma.log
+          exec tail -f /home/kali/xvnc.log /home/kali/xfce.log
           EOF
           chmod +x entrypoint.sh
 
@@ -152,17 +170,18 @@ jobs:
 
           ENV DEBIAN_FRONTEND=noninteractive
 
-          # Update repositori resmi Kali Linux & Pasang Desktop KDE Plasma Modern + Tools Pentest Populer
+          # 1. Update repositori resmi Kali Linux & Pasang Desktop Asli Kali (XFCE Official) + Tools
           RUN apt-get update && \
               apt-get install -y --no-install-recommends \
-                kde-plasma-desktop \
-                plasma-workspace \
-                konsole \
-                dolphin \
+                kali-desktop-xfce \
+                xfce4-terminal \
+                thunar \
                 tigervnc-standalone-server \
                 dbus-x11 \
                 x11-xserver-utils \
                 kali-themes \
+                kali-menu \
+                kali-undercover \
                 curl \
                 wget \
                 sudo \
@@ -173,11 +192,23 @@ jobs:
                 fonts-dejavu-core \
                 fonts-noto-core \
                 nmap \
+                git \
+                nodejs \
+                npm \
                 firefox-esr && \
               apt-get clean && \
               rm -rf /var/lib/apt/lists/*
 
-          # Buat user kali dengan hak akses sudo penuh
+          # 2. Pasang OpenCode AI Coding Agent (CLI resmi terbaru)
+          RUN curl -fsSL "https://github.com/anomalyco/opencode/releases/latest/download/opencode-linux-x64.tar.gz" | tar -xz -C /usr/local/bin && \
+              chmod +x /usr/local/bin/opencode && \
+              opencode --version || true
+
+          # 3. Pasang 9Router (AI Router Gateway untuk 60+ Provider) via npm
+          RUN npm install -g 9router && \
+              which 9router || true
+
+          # 4. Buat user kali resmi dengan hak sudo penuh
           RUN useradd -m -s /bin/bash -u 1000 kali && \
               echo "kali:pochi@333" | chpasswd && \
               echo "kali ALL=(ALL) ALL" >> /etc/sudoers
@@ -206,19 +237,18 @@ jobs:
       - name: 4. Informasi Akses
         run: |
           echo "=========================================="
-          echo "    KALI LINUX MODERN RDP SUDAH AKTIF     "
+          echo "  KALI LINUX RESMI (XFCE ORI) SUDAH AKTIF "
           echo "=========================================="
           echo "IP Tailscale : $TAILSCALE_IP"
           echo "Port         : 3389"
           echo "OS           : Kali Linux (Rolling Release Terbaru)"
-          echo "Desktop      : KDE Plasma (Modern Dark Mode)"
-          echo "Wallpaper    : Sasuke Uchiha (Pinterest 4K)"
+          echo "Desktop      : XFCE Official (Original Kali Theme & Dragon Wallpaper)"
+          echo "AI Tools     : OpenCode CLI & 9Router Gateway Terpasang"
           echo "User         : kali"
           echo "Password     : pochi@333"
           echo "=========================================="
 
           while true; do
-            echo "[$(date '+%H:%M:%S')] Kali Linux Modern Active..."
+            echo "[$(date '+%H:%M:%S')] Kali Linux Official XFCE Active..."
             sleep 60
           done
-          
