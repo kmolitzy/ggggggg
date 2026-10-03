@@ -54,7 +54,7 @@ jobs:
 
           sudo systemctl restart xrdp
 
-      - name: 3. Bangun & Jalankan Desktop Arch Linux Modern (KDE Plasma 6)
+      - name: 3. Bangun & Jalankan Desktop Arch Linux Modern Rice (Neofetch & Sasuke 4K)
         run: |
           cat <<'EOF' > entrypoint.sh
           #!/bin/bash
@@ -63,49 +63,199 @@ jobs:
           mkdir -p /tmp/.X11-unix
           chmod 1777 /tmp/.X11-unix
 
-          # 1. Unduh & Pasang Wallpaper Sasuke (Pinterest 4K)
+          # 1. Unduh & Pasang Wallpaper Sasuke 4K (Pinterest)
           mkdir -p /usr/share/wallpapers
           echo "Mengunduh wallpaper Sasuke..."
           curl -sSL "https://i.pinimg.com/originals/9f/37/33/9f37339f9b9de1081394d746d96d52e3.jpg" -o /usr/share/wallpapers/sasuke.jpg || true
 
-          mkdir -p /home/archuser/Pictures
-          cp /usr/share/wallpapers/sasuke.jpg /home/archuser/Pictures/sasuke.jpg 2>/dev/null || true
+          # 2. Pasang Neofetch secara langsung
+          echo "Memasang Neofetch..."
+          curl -sSL "https://raw.githubusercontent.com/dylanaraps/neofetch/master/neofetch" -o /usr/local/bin/neofetch || true
+          chmod +x /usr/local/bin/neofetch || true
 
-          # Ganti semua fallback default wallpaper agar otomatis menampilkan Sasuke
-          find /usr/share/wallpapers -type f \( -name "*.jpg" -o -name "*.png" \) ! -name "sasuke.jpg" 2>/dev/null | while read f; do
-            ln -sf /usr/share/wallpapers/sasuke.jpg "$f" 2>/dev/null || true
-          done
+          # 3. Setup Konfigurasi Archuser (bashrc, openbox, tint2, picom, alacritty)
+          mkdir -p /home/archuser/.config/openbox
+          mkdir -p /home/archuser/.config/tint2
+          mkdir -p /home/archuser/.config/alacritty
+          mkdir -p /home/archuser/.config/rofi
 
-          # 2. Konfigurasi Tema Modern (Breeze Dark / Cyber) & Wallpaper di KDE Plasma 6
-          mkdir -p /home/archuser/.config
-
-          cat <<'CONFIG' > /home/archuser/.config/kdeglobals
-          [General]
-          ColorScheme=BreezeDark
-          Name=Breeze Dark
+          # Auto run neofetch di bashrc setiap terminal dibuka
+          cat <<'CONFIG' >> /home/archuser/.bashrc
+          if [ -t 1 ]; then
+            if command -v neofetch >/dev/null 2>&1; then
+              neofetch
+            elif command -v fastfetch >/dev/null 2>&1; then
+              fastfetch
+            fi
+          fi
           CONFIG
 
-          cat <<'CONFIG' > /home/archuser/.config/kwinrc
-          [Compositing]
-          Enabled=false
+          # Konfigurasi Tint2 (Modern Floating Pill Bar di Atas Layar)
+          cat <<'CONFIG' > /home/archuser/.config/tint2/tint2rc
+          # Tint2 Modern Pill Bar
+          rounded = 10
+          border_width = 1
+          border_sides = tblr
+          border_color = #3b4252 80
+          background_color = #181926 90
+
+          panel_items = LTSC
+          panel_size = 96% 40
+          panel_margin = 8 8
+          panel_padding = 8 4 8
+          panel_background_id = 1
+          panel_position = top center horizontal
+          panel_layer = top
+          strut_policy = follow_size
+
+          # Launcher (Arch Menu)
+          launcher_padding = 4 4
+          launcher_background_id = 0
+          launcher_icon_size = 24
+          launcher_item_app = /usr/share/applications/rofi.desktop
+
+          # Taskbar
+          taskbar_mode = single_desktop
+          taskbar_padding = 4 2 4
+          taskbar_background_id = 0
+          task_icon = 1
+          task_text = 1
+          task_maximum_size = 180 32
+          task_padding = 4 2 4
+          task_font = Sans 10
+          task_font_color = #c0caf5 100
+          task_active_font_color = #7aa2f7 100
+          task_active_background_id = 1
+
+          # Clock
+          time1_format = %H:%M  ·  %A %d %b
+          time1_font = Sans Bold 10
+          time1_font_color = #c0caf5 100
+          clock_padding = 8 4
+          clock_background_id = 0
+          clock_lclick_command = rofi -show drun
           CONFIG
 
-          cat <<'CONFIG' > /home/archuser/.config/plasma-org.kde.plasma.desktop-appletsrc
-          [Containments][1]
-          formfactor=0
-          immutability=1
-          lastScreen=0
-          location=0
-          plugin=org.kde.plasma.folder
-          wallpaperplugin=org.kde.image
+          # Konfigurasi Picom (Sudut Membulat / Rounded Corners & Bayangan Halus)
+          cat <<'CONFIG' > /home/archuser/.config/picom.conf
+          corner-radius = 12;
+          rounded-corners-exclude = [
+            "window_type = 'dock'",
+            "window_type = 'desktop'"
+          ];
+          shadow = true;
+          shadow-radius = 12;
+          shadow-opacity = 0.5;
+          shadow-offset-x = -8;
+          shadow-offset-y = -8;
+          fading = true;
+          fade-in-step = 0.08;
+          fade-out-step = 0.08;
+          backend = "xrender";
+          CONFIG
 
-          [Containments][1][Wallpaper][org.kde.image][General]
-          Image=file:///usr/share/wallpapers/sasuke.jpg
+          # Konfigurasi Alacritty Terminal (Tokyo Night Dark)
+          cat <<'CONFIG' > /home/archuser/.config/alacritty/alacritty.toml
+          [window]
+          padding = { x = 12, y = 12 }
+          opacity = 0.92
+          decorations = "full"
+
+          [font]
+          size = 11.0
+
+          [colors.primary]
+          background = "#1a1b26"
+          foreground = "#c0caf5"
+          CONFIG
+
+          # Konfigurasi Autostart (Wallpaper, Bar, Compositor, Terminal Pertama)
+          cat <<'CONFIG' > /home/archuser/.config/openbox/autostart
+          # Pasang Wallpaper Sasuke 4K
+          feh --bg-fill /usr/share/wallpapers/sasuke.jpg &
+
+          # Jalankan Compositor Rounded Corners
+          picom -b --config /home/archuser/.config/picom.conf &
+
+          # Jalankan Modern Floating Pill Bar
+          tint2 -c /home/archuser/.config/tint2/tint2rc &
+
+          # Buka Alacritty otomatis dengan neofetch di startup
+          alacritty -e bash -c "neofetch; exec bash" &
+          CONFIG
+          chmod +x /home/archuser/.config/openbox/autostart
+
+          # Konfigurasi Tombol Pintas / Hotkeys
+          cat <<'CONFIG' > /home/archuser/.config/openbox/rc.xml
+          <?xml version="1.0" encoding="UTF-8"?>
+          <openbox_config xmlns="http://openbox.org/3.4/rc">
+            <theme>
+              <name>Clearlooks</name>
+              <cornerRadius>8</cornerRadius>
+            </theme>
+            <keyboard>
+              <!-- Tombol Super (Windows Start di 0X1) -> Membuka Rofi App Launcher -->
+              <keybind key="W-space"><action name="Execute"><command>rofi -show drun</command></action></keybind>
+              <keybind key="Super_L"><action name="Execute"><command>rofi -show drun</command></action></keybind>
+              <keybind key="Super_R"><action name="Execute"><command>rofi -show drun</command></action></keybind>
+              <keybind key="W-r"><action name="Execute"><command>rofi -show drun</command></action></keybind>
+              <!-- Super + Enter -> Membuka Alacritty Terminal (dengan Neofetch) -->
+              <keybind key="W-Return"><action name="Execute"><command>alacritty</command></action></keybind>
+              <!-- Super + e -> File Manager -->
+              <keybind key="W-e"><action name="Execute"><command>thunar</command></action></keybind>
+              <!-- Super + b -> Firefox Browser -->
+              <keybind key="W-b"><action name="Execute"><command>firefox</command></action></keybind>
+              <!-- Super + q / Alt + F4 -> Tutup Jendela -->
+              <keybind key="W-q"><action name="Close"/></keybind>
+              <keybind key="A-F4"><action name="Close"/></keybind>
+              <!-- Alt + Tab -> Pindah Jendela -->
+              <keybind key="A-Tab"><action name="NextWindow"/></keybind>
+            </keyboard>
+            <mouse>
+              <context name="Root">
+                <!-- Klik Kanan di Desktop -> Menu Utama Arch Linux -->
+                <mousebind button="Right" action="Press"><action name="ShowMenu"><menu>root-menu</menu></action></mousebind>
+              </context>
+            </mouse>
+            <menu>
+              <file>/home/archuser/.config/openbox/menu.xml</file>
+            </menu>
+          </openbox_config>
+          CONFIG
+
+          # Menu klik kanan desktop
+          cat <<'CONFIG' > /home/archuser/.config/openbox/menu.xml
+          <?xml version="1.0" encoding="UTF-8"?>
+          <openbox_menu xmlns="http://openbox.org/3.4/menu">
+            <menu id="root-menu" label="Arch Linux">
+              <item label="🚀 App Launcher (Rofi)"><action name="Execute"><command>rofi -show drun</command></action></item>
+              <item label="💻 Terminal (Neofetch)"><action name="Execute"><command>alacritty</command></action></item>
+              <item label="📁 File Manager"><action name="Execute"><command>thunar</command></action></item>
+              <item label="🌐 Firefox Browser"><action name="Execute"><command>firefox</command></action></item>
+              <separator />
+              <item label="🖼️ Reset Wallpaper Sasuke"><action name="Execute"><command>feh --bg-fill /usr/share/wallpapers/sasuke.jpg</command></action></item>
+              <item label="📊 Fastfetch System Info"><action name="Execute"><command>alacritty -e bash -c "fastfetch; read -p 'Press Enter...'"</command></action></item>
+              <separator />
+              <item label="🔒 Lock / Exit"><action name="Exit" /></item>
+            </menu>
+          </openbox_menu>
+          CONFIG
+
+          # Shortcut Rofi di panel menu
+          mkdir -p /usr/share/applications
+          cat <<'CONFIG' > /usr/share/applications/rofi.desktop
+          [Desktop Entry]
+          Name=Applications
+          Comment=Application Launcher
+          Exec=rofi -show drun
+          Icon=archlinux
+          Terminal=false
+          Type=Application
           CONFIG
 
           chown -R archuser:archuser /home/archuser
 
-          # 3. Jalankan Display Server TigerVNC di Port 5901
+          # 4. Jalankan Display Server TigerVNC di Port 5901
           su - archuser -c "Xvnc :1 -geometry 1280x720 -depth 24 -rfbport 5901 -SecurityTypes None -pn" > /home/archuser/xvnc.log 2>&1 &
 
           # Tunggu socket display :1 siap
@@ -117,55 +267,42 @@ jobs:
             sleep 0.5
           done
 
-          # 4. Jalankan Sesi Desktop Modern KDE Plasma 6
+          # 5. Jalankan Sesi Desktop Arch Modern Rice
           su - archuser -c "
             export DISPLAY=:1
-            export XDG_CURRENT_DESKTOP=KDE
-            export KDE_FULL_SESSION=true
-            export XDG_SESSION_TYPE=x11
-            export DESKTOP_SESSION=plasma
-            export LIBGL_ALWAYS_SOFTWARE=1
-            export QT_QUICK_BACKEND=software
-            
-            if command -v startplasma-x11 >/dev/null 2>&1; then
-              dbus-run-session startplasma-x11
-            elif command -v startkde >/dev/null 2>&1; then
-              dbus-run-session startkde
-            else
-              dbus-run-session plasma-desktop
-            fi
-          " > /home/archuser/plasma.log 2>&1 &
-
-          # Terapkan wallpaper via CLI tools setelah Plasma siap
-          (
-            sleep 10
-            su - archuser -c "DISPLAY=:1 plasma-apply-wallpaperimage /usr/share/wallpapers/sasuke.jpg" 2>/dev/null || true
-          ) &
+            dbus-run-session openbox-session
+          " > /home/archuser/openbox.log 2>&1 &
 
           sleep 2
-          exec tail -f /home/archuser/xvnc.log /home/archuser/plasma.log
+          exec tail -f /home/archuser/xvnc.log /home/archuser/openbox.log
           EOF
           chmod +x entrypoint.sh
 
           cat <<'EOF' > Dockerfile
           FROM archlinux:latest
 
-          # Update repositori resmi Arch Linux & Pasang Desktop KDE Plasma 6 Modern + Tools Populer
+          # Update repositori resmi Arch Linux & Pasang Desktop Modern Rice + Neofetch + Tools
           RUN pacman -Syu --noconfirm && \
               pacman -S --noconfirm \
-                plasma-desktop \
-                konsole \
-                dolphin \
-                tigervnc \
-                dbus \
-                sudo \
+                openbox \
+                tint2 \
+                rofi \
+                picom \
+                alacritty \
+                feh \
                 fastfetch \
+                thunar \
+                firefox \
+                ttf-jetbrains-mono-nerd \
+                ttf-dejavu \
+                tigervnc \
+                sudo \
+                dbus \
                 curl \
                 wget \
-                ttf-dejavu \
-                ttf-liberation \
-                firefox \
-                iproute2 && \
+                iproute2 \
+                xorg-xsetroot \
+                xorg-xrandr && \
               pacman -Scc --noconfirm
 
           # Buat user archuser dengan hak akses sudo penuh
@@ -197,18 +334,20 @@ jobs:
       - name: 4. Informasi Akses
         run: |
           echo "=========================================="
-          echo "    ARCH LINUX MODERN RDP SUDAH AKTIF     "
+          echo "   ARCH LINUX MODERN RICE SUDAH AKTIF     "
           echo "=========================================="
           echo "IP Tailscale : $TAILSCALE_IP"
           echo "Port         : 3389"
-          echo "OS           : Arch Linux (Rolling Release Terbaru)"
-          echo "Desktop      : KDE Plasma 6 (Modern Dark Mode)"
+          echo "OS           : Arch Linux (Official Rolling Release)"
+          echo "Desktop      : Modern Rice (Openbox + Tint2 Pill Bar + Picom)"
+          echo "Launcher     : Rofi (Modern Dark Search Menu)"
+          echo "Terminal     : Alacritty (JetBrains Mono + Neofetch)"
           echo "Wallpaper    : Sasuke Uchiha (Pinterest 4K)"
           echo "User         : archuser"
           echo "Password     : pochi@333"
           echo "=========================================="
 
           while true; do
-            echo "[$(date '+%H:%M:%S')] Arch Linux Modern Active..."
+            echo "[$(date '+%H:%M:%S')] Arch Linux Modern Rice Active..."
             sleep 60
           done
