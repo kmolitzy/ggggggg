@@ -1,7 +1,6 @@
-Runner Kali Linux Active: kali-runner-37129448993
-Buka aplikasi Tailscale di Android / Laptop, cari perangkat: kali-runner-37129448993
-Hubungkan via RDP (Port 3389) menggunakan IP Tailscale perangkat tersebut!
+IP Tailscale: 100.114.217.87
+Runner: kali-runner-37129892019
+Port: 3389
 Username: kali
 Password: pochi@333
-Desktop: XFCE Official (Kali-Dark + Dragon Wallpaper)
-AI Tools: OpenCode & 9Router
+Desktop: XFCE Official (ORI)
