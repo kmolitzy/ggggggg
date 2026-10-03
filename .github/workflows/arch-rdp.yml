@@ -9,16 +9,16 @@ jobs:
     timeout-minutes: 360
 
     steps:
-      - name: 1. Pasang & Hubungkan Tailscale di Host
+      - name: 1. Hubungkan Tailscale di Host
         run: |
           curl -fsSL https://tailscale.com/install.sh | sudo sh
           sudo tailscale up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=arch-runner-${{ github.run_id }}
           
           TS_IP=""
-          for i in {1..12}; do
-            TS_IP=$(tailscale ip -4 || true)
+          for i in {1..15}; do
+            TS_IP=$(tailscale ip -4 2>/dev/null || true)
             if [ -n "$TS_IP" ]; then break; fi
-            sleep 3
+            sleep 2
           done
           
           if [ -z "$TS_IP" ]; then
@@ -27,19 +27,67 @@ jobs:
           echo "TAILSCALE_IP=$TS_IP" >> $GITHUB_ENV
           echo "Tailscale IP: $TS_IP"
 
-      - name: 2. Siapkan xrdp Gateway di Host
+      - name: 2. Pasang & Konfigurasi xrdp Gateway
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq xrdp
-          sudo sed -i 's/port=3389/port=3389/g' /etc/xrdp/xrdp.ini
-          sudo systemctl enable --now xrdp
+          sudo apt-get install -y -qq xrdp netcat-openbsd
 
-      - name: 3. Bangun & Jalankan Arch Linux GUI Container
+          # Konfigurasi xrdp agar langsung auto-login ke Arch VNC di port 5901 tanpa jendela prompt
+          sudo python3 - <<'PY'
+          from pathlib import Path
+          p = Path('/etc/xrdp/xrdp.ini')
+          s = p.read_text()
+          s = s.replace('autorun=', 'autorun=ArchLinux')
+          s = s.replace('hidelogwindow=no', 'hidelogwindow=yes')
+          
+          vnc_entry = """[ArchLinux]
+          name=ArchLinux
+          lib=libvnc.so
+          ip=127.0.0.1
+          port=5901
+          username=na
+          password=
+          """
+          s = s.replace('[Xorg]', vnc_entry + '\n[Xorg]')
+          p.write_text(s)
+          PY
+
+          sudo systemctl restart xrdp
+
+      - name: 3. Bangun & Jalankan Desktop Arch Linux Murni
         run: |
-          # Buat container Arch Linux resmi dengan XFCE4, TigerVNC, terminal, & fastfetch
+          cat <<'EOF' > entrypoint.sh
+          #!/bin/bash
+          set -e
+
+          mkdir -p /tmp/.X11-unix
+          chmod 1777 /tmp/.X11-unix
+
+          # Jalankan Xvnc langsung (port 5901, display :1)
+          su - archuser -c "Xvnc :1 -geometry 1280x720 -depth 24 -rfbport 5901 -SecurityTypes None,TLSNone -pn" > /home/archuser/xvnc.log 2>&1 &
+
+          # Tunggu sampai socket /tmp/.X11-unix/X1 dan port 5901 siap
+          for i in {1..30}; do
+            if [ -S /tmp/.X11-unix/X1 ]; then
+              echo "Xvnc display :1 siap!"
+              break
+            fi
+            sleep 0.5
+          done
+
+          # Jalankan XFCE4 desktop session dengan dbus
+          su - archuser -c "DISPLAY=:1 dbus-run-session startxfce4" > /home/archuser/xfce.log 2>&1 &
+
+          # Pantau log
+          sleep 2
+          exec tail -f /home/archuser/xvnc.log /home/archuser/xfce.log
+          EOF
+          chmod +x entrypoint.sh
+
           cat <<'EOF' > Dockerfile
           FROM archlinux:latest
-          
+
+          # Update mirror dan pasang XFCE, TigerVNC, terminal, font, tools
           RUN pacman -Syu --noconfirm && \
               pacman -S --noconfirm \
                 xfce4 \
@@ -51,66 +99,48 @@ jobs:
                 which \
                 dbus \
                 fastfetch \
-                firefox
+                firefox \
+                iproute2
 
           # Buat user archuser
           RUN useradd -m -s /bin/bash archuser && \
               echo "archuser:pochi@333" | chpasswd && \
               echo "archuser ALL=(ALL) ALL" >> /etc/sudoers
 
-          USER archuser
-          WORKDIR /home/archuser
-
-          # Konfigurasi desktop XFCE di VNC
-          RUN mkdir -p /home/archuser/.vnc && \
-              echo "pochi@333" | vncpasswd -f > /home/archuser/.vnc/passwd && \
-              chmod 600 /home/archuser/.vnc/passwd && \
-              echo '#!/bin/sh' > /home/archuser/.vnc/xstartup && \
-              echo 'unset SESSION_MANAGER' >> /home/archuser/.vnc/xstartup && \
-              echo 'unset DBUS_SESSION_BUS_ADDRESS' >> /home/archuser/.vnc/xstartup && \
-              echo 'exec startxfce4' >> /home/archuser/.vnc/xstartup && \
-              chmod +x /home/archuser/.vnc/xstartup
-
-          CMD ["/bin/sh", "-c", "vncserver :1 -geometry 1280x720 -depth 24 && tail -f /home/archuser/.vnc/*.log"]
+          COPY entrypoint.sh /entrypoint.sh
+          ENTRYPOINT ["/entrypoint.sh"]
           EOF
 
           docker build -t arch-rdp .
           docker run -d --name arch-desktop --net=host arch-rdp
-          sleep 5
 
-          # Hubungkan port 3389 xrdp langsung ke desktop Arch
-          sudo python3 - <<'PY'
-          from pathlib import Path
-          p = Path('/etc/xrdp/xrdp.ini')
-          s = p.read_text()
-          vnc_entry = """[Xvnc]
-          name=ArchLinux
-          lib=libvnc.so
-          username=na
-          password=pochi@333
-          ip=127.0.0.1
-          port=5901
-          """
-          s = s.replace('[Xorg]', vnc_entry + '\n[Xorg]')
-          p.write_text(s)
-          PY
-          
-          sudo systemctl restart xrdp
+          # Tunggu dan pastikan port 5901 benar-benar listening di host
+          echo "Memverifikasi port 5901..."
+          for i in {1..20}; do
+            if nc -z 127.0.0.1 5901; then
+              echo "Port 5901 VNC Arch Linux AKTIF & SIAP!"
+              break
+            fi
+            sleep 1
+          done
 
-      - name: 4. Info Akses RDP Arch Linux
+          # Cek status container & log
+          docker ps
+          docker logs arch-desktop || true
+
+      - name: 4. Informasi Akses
         run: |
           echo "=========================================="
-          echo "      ARCH LINUX RDP BERHASIL AKTIF       "
+          echo "      ARCH LINUX RDP SUDAH AKTIF          "
           echo "=========================================="
           echo "IP Tailscale : $TAILSCALE_IP"
           echo "Port         : 3389"
-          echo "Username     : archuser"
-          echo "Password     : pochi@333"
           echo "OS           : Arch Linux (Rolling Release)"
           echo "Desktop      : XFCE4"
           echo "=========================================="
 
           while true; do
-            echo "[$(date '+%H:%M:%S')] Arch Linux RDP Active..."
+            echo "[$(date '+%H:%M:%S')] Arch Linux Active..."
             sleep 60
           done
+          
