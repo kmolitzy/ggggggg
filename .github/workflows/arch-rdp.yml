@@ -32,7 +32,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq xrdp netcat-openbsd
 
-          # Konfigurasi xrdp agar auto-connect ke Arch Linux di port 5901 tanpa jendela prompt
+          # Konfigurasi xrdp agar langsung auto-connect ke Arch Linux di port 5901
           sudo python3 - <<'PY'
           from pathlib import Path
           p = Path('/etc/xrdp/xrdp.ini')
@@ -60,19 +60,8 @@ jobs:
           #!/bin/bash
           set -e
 
-          mkdir -p /tmp/.X11-unix
-          chmod 1777 /tmp/.X11-unix
-
-          # 1. Setup .bashrc terminal agar memunculkan fastfetch resmi Arch Linux
-          cat <<'CONFIG' >> /home/archuser/.bashrc
-          if [ -t 1 ]; then
-            command -v fastfetch >/dev/null 2>&1 && fastfetch
-          fi
-          CONFIG
-          chown archuser:archuser /home/archuser/.bashrc
-
-          # 2. Jalankan Display Server TigerVNC di Port 5901 dengan flag -ac (Akses Terbuka Bebas Error)
-          su - archuser -c "Xvnc :1 -geometry 1280x720 -depth 24 -rfbport 5901 -SecurityTypes None -ac -pn" > /home/archuser/xvnc.log 2>&1 &
+          # 1. Jalankan Display Server TigerVNC di Port 5901 dengan flag -ac
+          Xvnc :1 -geometry 1280x720 -depth 24 -rfbport 5901 -SecurityTypes None -ac -pn > /home/archuser/xvnc.log 2>&1 &
 
           # Tunggu socket display :1 siap
           for i in {1..30}; do
@@ -83,42 +72,27 @@ jobs:
             sleep 0.5
           done
 
-          # 3. Set background Arch Blue solid agar layar langsung berwarna biru Arch Linux
           export DISPLAY=:1
+          export LIBGL_ALWAYS_SOFTWARE=1
+          export GDK_BACKEND=x11
+          export XDG_CURRENT_DESKTOP=XFCE
+          export DESKTOP_SESSION=xfce
+
+          # 2. Set background Arch Blue solid
           xsetroot -solid "#1793d1" 2>/dev/null || true
 
-          # 4. Jalankan Sesi Desktop Resmi XFCE Bawaan Arch Linux
-          su - archuser -c "
-            export DISPLAY=:1
-            export XDG_CURRENT_DESKTOP=XFCE
-            export XDG_SESSION_TYPE=x11
-            export DESKTOP_SESSION=xfce
-            export LIBGL_ALWAYS_SOFTWARE=1
-            export GDK_BACKEND=x11
-            
-            if command -v dbus-run-session >/dev/null 2>&1; then
-              dbus-run-session startxfce4
-            else
-              startxfce4
-            fi
-          " > /home/archuser/xfce.log 2>&1 &
-
-          # 5. Supervisor jaminan: pastikan panel, window manager, dan desktop aktif
-          (
-            sleep 4
-            if ! pgrep -x "xfwm4" >/dev/null; then
-              su - archuser -c "DISPLAY=:1 LIBGL_ALWAYS_SOFTWARE=1 xfwm4 --compositor=off &"
-            fi
-            if ! pgrep -x "xfce4-panel" >/dev/null; then
-              su - archuser -c "DISPLAY=:1 LIBGL_ALWAYS_SOFTWARE=1 xfce4-panel &"
-            fi
-            if ! pgrep -x "xfdesktop" >/dev/null; then
-              su - archuser -c "DISPLAY=:1 LIBGL_ALWAYS_SOFTWARE=1 xfdesktop &"
-            fi
-          ) &
-
-          sleep 2
-          exec tail -f /home/archuser/xvnc.log /home/archuser/xfce.log
+          # 3. Jalankan D-Bus Session dan seluruh komponen desktop resmi XFCE
+          echo "Memulai sesi desktop resmi Arch Linux XFCE..."
+          exec dbus-run-session bash -c '
+            xfconfd &
+            sleep 0.5
+            xfsettingsd &
+            xfwm4 --compositor=off &
+            xfce4-panel &
+            xfdesktop &
+            xfce4-terminal &
+            wait
+          '
           EOF
           chmod +x entrypoint.sh
 
@@ -150,7 +124,18 @@ jobs:
               echo "archuser:pochi@333" | chpasswd && \
               echo "archuser ALL=(ALL) ALL" >> /etc/sudoers
 
+          RUN mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix
+
+          # Setup terminal fastfetch Arch Linux
+          RUN echo 'if [ -t 1 ]; then command -v fastfetch >/dev/null 2>&1 && fastfetch; fi' >> /home/archuser/.bashrc && \
+              chown -R archuser:archuser /home/archuser
+
           COPY entrypoint.sh /entrypoint.sh
+          RUN chmod +x /entrypoint.sh
+
+          USER archuser
+          WORKDIR /home/archuser
+
           ENTRYPOINT ["/entrypoint.sh"]
           EOF
 
@@ -168,6 +153,7 @@ jobs:
           done
 
           # Cek status container & log
+          sleep 3
           docker ps
           docker logs arch-desktop || true
 
