@@ -3,13 +3,19 @@ name: Kali Linux Official XFCE RDP
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   kali-rdp:
     runs-on: ubuntu-latest
     timeout-minutes: 360
 
     steps:
-      - name: 1. Hubungkan Tailscale di Host
+      - name: 1. Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 2. Hubungkan Tailscale & Laporkan IP ke Repositori
         run: |
           curl -fsSL https://tailscale.com/install.sh | sudo sh
           sudo tailscale up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=kali-runner-${{ github.run_id }}
@@ -27,12 +33,25 @@ jobs:
           echo "TAILSCALE_IP=$TS_IP" >> $GITHUB_ENV
           echo "Tailscale IP: $TS_IP"
 
-      - name: 2. Pasang & Konfigurasi xrdp Gateway
+          # Tulis IP ke CURRENT_IP.txt dan push otomatis ke GitHub
+          git config user.name "0X1-Bot"
+          git config user.email "bot@0x1.cloud"
+          echo "IP Tailscale: $TS_IP" > CURRENT_IP.txt
+          echo "Runner: kali-runner-${{ github.run_id }}" >> CURRENT_IP.txt
+          echo "Port: 3389" >> CURRENT_IP.txt
+          echo "Username: kali" >> CURRENT_IP.txt
+          echo "Password: pochi@333" >> CURRENT_IP.txt
+          echo "Desktop: XFCE Official (ORI)" >> CURRENT_IP.txt
+          git add CURRENT_IP.txt
+          git commit -m "Auto-report Kali Linux IP: $TS_IP [skip ci]" || true
+          git remote set-url origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/kmolitzy/ggggggg.git"
+          git push origin main || true
+
+      - name: 3. Pasang & Konfigurasi xrdp Gateway
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq xrdp netcat-openbsd
 
-          # Konfigurasi xrdp agar langsung auto-login ke Kali Linux di port 5901 tanpa dialog prompt
           sudo python3 - <<'PY'
           from pathlib import Path
           p = Path('/etc/xrdp/xrdp.ini')
@@ -54,7 +73,7 @@ jobs:
 
           sudo systemctl restart xrdp
 
-      - name: 3. Bangun & Jalankan Desktop Kali Linux Murni (XFCE Official ORI + OpenCode + 9Router)
+      - name: 4. Bangun & Jalankan Desktop Kali Linux Murni (XFCE Official ORI + OpenCode + 9Router)
         run: |
           cat <<'EOF' > entrypoint.sh
           #!/bin/bash
@@ -234,7 +253,7 @@ jobs:
           docker ps
           docker logs kali-desktop || true
 
-      - name: 4. Informasi Akses
+      - name: 5. Informasi Akses
         run: |
           echo "=========================================="
           echo "  KALI LINUX RESMI (XFCE ORI) SUDAH AKTIF "
