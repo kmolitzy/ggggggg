@@ -9,7 +9,10 @@ jobs:
     timeout-minutes: 360
 
     steps:
-      - name: 1. Hubungkan Tailscale di Host
+      - name: 1. Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 2. Hubungkan Tailscale di Host
         run: |
           curl -fsSL https://tailscale.com/install.sh | sudo sh
           sudo tailscale up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=arch-runner-${{ github.run_id }}
@@ -27,12 +30,12 @@ jobs:
           echo "TAILSCALE_IP=$TS_IP" >> $GITHUB_ENV
           echo "Tailscale IP: $TS_IP"
 
-      - name: 2. Pasang & Konfigurasi xrdp Gateway
+      - name: 3. Pasang & Konfigurasi xrdp Gateway
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq xrdp netcat-openbsd
 
-          # Konfigurasi xrdp agar langsung auto-login ke Arch VNC di port 5901 tanpa jendela prompt
+          # Konfigurasi xrdp auto-login ke Arch VNC di port 5901 tanpa jendela prompt
           sudo python3 - <<'PY'
           from pathlib import Path
           p = Path('/etc/xrdp/xrdp.ini')
@@ -54,7 +57,7 @@ jobs:
 
           sudo systemctl restart xrdp
 
-      - name: 3. Bangun & Jalankan Desktop Arch Linux Murni
+      - name: 4. Bangun & Jalankan Desktop Arch Linux Murni (Tema Dracula + Installer 0X1 di Desktop)
         run: |
           cat <<'EOF' > entrypoint.sh
           #!/bin/bash
@@ -63,7 +66,7 @@ jobs:
           mkdir -p /tmp/.X11-unix
           chmod 1777 /tmp/.X11-unix
 
-          # Jalankan Xvnc langsung (port 5901, display :1)
+          # 1. Jalankan Xvnc langsung di port 5901 (display :1) persis seperti versi 6c3b2cd
           su - archuser -c "Xvnc :1 -geometry 1280x720 -depth 24 -rfbport 5901 -SecurityTypes None,TLSNone -pn" > /home/archuser/xvnc.log 2>&1 &
 
           # Tunggu sampai socket /tmp/.X11-unix/X1 dan port 5901 siap
@@ -75,8 +78,53 @@ jobs:
             sleep 0.5
           done
 
-          # Jalankan XFCE4 desktop session dengan dbus
+          # 2. Siapkan file installer 0X1 di Desktop archuser
+          mkdir -p /home/archuser/Desktop
+          if [ -f /opt/downloads/0X1-1.0.3.apk ]; then
+            cp /opt/downloads/0X1-1.0.3.apk /home/archuser/Desktop/0X1-1.0.3.apk
+            cp /opt/downloads/Panduan-0X1.html /home/archuser/Desktop/Panduan-0X1.html 2>/dev/null || true
+          fi
+
+          # Buat desktop shortcut resmi untuk 0X1 APK
+          cat <<'DESK' > /home/archuser/Desktop/0X1-App.desktop
+          [Desktop Entry]
+          Version=1.0
+          Type=Application
+          Name=0X1 Android App (APK)
+          Comment=File APK Aplikasi 0X1 siap pakai & unduh
+          Exec=thunar /home/archuser/Desktop
+          Icon=application-x-executable
+          Terminal=false
+          StartupNotify=true
+          DESK
+          chmod +x /home/archuser/Desktop/*.desktop 2>/dev/null || true
+          chown -R archuser:archuser /home/archuser/Desktop
+
+          # 3. Jalankan Web Server Lokal untuk download APK 0X1 langsung dari HP
+          su - archuser -c "python3 -m http.server 8080 --directory /home/archuser/Desktop" > /home/archuser/webserver.log 2>&1 &
+
+          # 4. Jalankan XFCE4 desktop session dengan dbus persis versi 6c3b2cd
           su - archuser -c "DISPLAY=:1 dbus-run-session startxfce4" > /home/archuser/xfce.log 2>&1 &
+
+          # 5. Terapkan Tema Dracula & Ikon Papirus-Dark secara dinamis
+          (
+            sleep 5
+            su - archuser -c "
+              export DISPLAY=:1
+              xfconf-query -c xsettings -p /Net/ThemeName -s 'Dracula' --create -t string 2>/dev/null || true
+              xfconf-query -c xsettings -p /Net/IconThemeName -s 'Papirus-Dark' --create -t string 2>/dev/null || true
+              xfconf-query -c xfwm4 -p /general/theme -s 'Dracula' --create -t string 2>/dev/null || true
+              xfconf-query -c xfwm4 -p /general/use_compositing -s 'false' --create -t bool 2>/dev/null || true
+              
+              # Set wallpaper Arch Linux
+              if [ -f /usr/share/backgrounds/wallpaper.jpg ]; then
+                xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitor0/workspace0/last-image -s /usr/share/backgrounds/wallpaper.jpg --create -t string 2>/dev/null || true
+                xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitor0/workspace0/image-style -s 5 --create -t int 2>/dev/null || true
+                xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitorVNC-0/workspace0/last-image -s /usr/share/backgrounds/wallpaper.jpg --create -t string 2>/dev/null || true
+                xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitorVNC-0/workspace0/image-style -s 5 --create -t int 2>/dev/null || true
+              fi
+            " 2>/dev/null || true
+          ) &
 
           # Pantau log
           sleep 2
@@ -87,10 +135,10 @@ jobs:
           cat <<'EOF' > Dockerfile
           FROM archlinux:latest
 
-          # Update mirror dan pasang XFCE, TigerVNC, terminal, font, tools, tema modern & wallpaper
           RUN pacman -Syu --noconfirm && \
               pacman -S --noconfirm \
                 xfce4 \
+                xfce4-goodies \
                 xfce4-terminal \
                 tigervnc \
                 sudo \
@@ -102,20 +150,40 @@ jobs:
                 firefox \
                 papirus-icon-theme \
                 archlinux-wallpaper \
+                python \
+                curl \
+                tar \
                 iproute2 && \
               pacman -Scc --noconfirm
+
+          # Unduh & pasang tema modern Dracula GTK & XFWM4
+          RUN mkdir -p /usr/share/themes /usr/share/backgrounds && \
+              curl -fsSL https://github.com/dracula/gtk/archive/master.tar.gz -o /tmp/dracula.tar.gz && \
+              tar -xzf /tmp/dracula.tar.gz -C /usr/share/themes/ && \
+              mv /usr/share/themes/gtk-master /usr/share/themes/Dracula && \
+              rm -f /tmp/dracula.tar.gz
+
+          # Unduh Wallpaper Arch Modern Dark Minimalist
+          RUN curl -fsSL "https://raw.githubusercontent.com/catppuccin/wallpapers/main/minimalistic/arch-nord.png" -o /usr/share/backgrounds/wallpaper.jpg || true && \
+              mkdir -p /usr/share/backgrounds/xfce && \
+              cp /usr/share/backgrounds/wallpaper.jpg /usr/share/backgrounds/xfce/xfce-stripes.png 2>/dev/null || true && \
+              cp /usr/share/backgrounds/wallpaper.jpg /usr/share/backgrounds/xfce/xfce-blue.jpg 2>/dev/null || true
 
           # Buat user archuser
           RUN useradd -m -s /bin/bash archuser && \
               echo "archuser:pochi@333" | chpasswd && \
               echo "archuser ALL=(ALL) ALL" >> /etc/sudoers
 
-          # Terapkan Tema Modern (Adwaita-Dark & Papirus-Dark)
+          # Konfigurasi default tema Dracula & Papirus-Dark untuk archuser
           RUN mkdir -p /home/archuser/.config/xfce4/xfconf/xfce-perchannel-xml && \
-              echo '<?xml version="1.0" encoding="UTF-8"?><channel name="xsettings" version="1.0"><property name="Net" type="empty"><property name="ThemeName" type="string" value="Adwaita-dark"/><property name="IconThemeName" type="string" value="Papirus-Dark"/></property></channel>' > /home/archuser/.config/xfce4/xfconf/xfce-perchannel-xml/xsettings.xml && \
-              echo '<?xml version="1.0" encoding="UTF-8"?><channel name="xfwm4" version="1.0"><property name="general" type="empty"><property name="theme" type="string" value="Default-hdpi"/><property name="use_compositing" type="bool" value="false"/></property></channel>' > /home/archuser/.config/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml && \
+              echo '<?xml version="1.0" encoding="UTF-8"?><channel name="xsettings" version="1.0"><property name="Net" type="empty"><property name="ThemeName" type="string" value="Dracula"/><property name="IconThemeName" type="string" value="Papirus-Dark"/></property></channel>' > /home/archuser/.config/xfce4/xfconf/xfce-perchannel-xml/xsettings.xml && \
+              echo '<?xml version="1.0" encoding="UTF-8"?><channel name="xfwm4" version="1.0"><property name="general" type="empty"><property name="theme" type="string" value="Dracula"/><property name="use_compositing" type="bool" value="false"/></property></channel>' > /home/archuser/.config/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml && \
               echo 'if [ -t 1 ]; then command -v fastfetch >/dev/null 2>&1 && fastfetch; fi' >> /home/archuser/.bashrc && \
               chown -R archuser:archuser /home/archuser
+
+          # Salin file unduhan 0X1 ke container
+          RUN mkdir -p /opt/downloads
+          COPY downloads/ /opt/downloads/
 
           COPY entrypoint.sh /entrypoint.sh
           ENTRYPOINT ["/entrypoint.sh"]
@@ -124,7 +192,7 @@ jobs:
           docker build -t arch-rdp .
           docker run -d --name arch-desktop --net=host arch-rdp
 
-          # Tunggu dan pastikan port 5901 benar-benar listening di host
+          # Verifikasi port 5901 VNC
           echo "Memverifikasi port 5901..."
           for i in {1..20}; do
             if nc -z 127.0.0.1 5901; then
@@ -138,18 +206,24 @@ jobs:
           docker ps
           docker logs arch-desktop || true
 
-      - name: 4. Informasi Akses
+      - name: 5. Informasi Akses
         run: |
           echo "=========================================="
           echo "      ARCH LINUX RDP SUDAH AKTIF          "
           echo "=========================================="
           echo "IP Tailscale : $TAILSCALE_IP"
-          echo "Port         : 3389"
+          echo "Port RDP     : 3389"
           echo "OS           : Arch Linux (Rolling Release)"
-          echo "Desktop      : XFCE4 (Dark Mode & Papirus Icons)"
+          echo "Desktop      : XFCE4 (Modern Dracula & Papirus)"
+          echo "User         : archuser"
+          echo "Password     : pochi@333"
+          echo "=========================================="
+          echo "LINK DOWNLOAD APLIKASI 0X1 LANGSUNG:"
+          echo "Buka di browser HP: http://$TAILSCALE_IP:8080"
+          echo "Atau buka file di Desktop: 0X1-1.0.3.apk"
           echo "=========================================="
 
           while true; do
-            echo "[$(date '+%H:%M:%S')] Arch Linux Active..."
+            echo "[$(date '+%H:%M:%S')] Arch Linux Active at IP $TAILSCALE_IP..."
             sleep 60
           done
