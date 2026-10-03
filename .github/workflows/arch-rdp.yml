@@ -27,12 +27,12 @@ jobs:
           echo "TAILSCALE_IP=$TS_IP" >> $GITHUB_ENV
           echo "Tailscale IP: $TS_IP"
 
-      - name: 2. Pasang & Konfigurasi xrdp Gateway
+      - name: 2. Pasang & Konfigurasi xrdp Gateway (Auto-Login Mulus Tanpa Layar Hitam)
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq xrdp netcat-openbsd
 
-          # Konfigurasi xrdp agar auto-login mulus ke port 5901 Arch Linux
+          # Konfigurasi xrdp agar langsung auto-login ke Arch Linux di port 5901 tanpa dialog prompt
           sudo python3 - <<'PY'
           from pathlib import Path
           p = Path('/etc/xrdp/xrdp.ini')
@@ -45,8 +45,8 @@ jobs:
           lib=libvnc.so
           ip=127.0.0.1
           port=5901
-          username=ask
-          password=ask
+          username=na
+          password=
           """
           s = s.replace('[Xorg]', vnc_entry + '\n[Xorg]')
           p.write_text(s)
@@ -58,14 +58,12 @@ jobs:
         run: |
           cat <<'EOF' > entrypoint.sh
           #!/bin/bash
+          set -e
 
-          # 1. Pastikan Machine-ID & Sistem D-Bus Aktif
-          mkdir -p /var/run/dbus /tmp/.X11-unix
+          mkdir -p /tmp/.X11-unix
           chmod 1777 /tmp/.X11-unix
-          dbus-uuidgen --ensure=/etc/machine-id
-          dbus-daemon --system --fork 2>/dev/null || true
 
-          # 2. Setup ~/.bashrc agar terminal menampilkan fastfetch resmi Arch Linux
+          # 1. Setup .bashrc agar terminal otomatis menampilkan fastfetch resmi Arch Linux
           cat <<'CONFIG' >> /home/archuser/.bashrc
           if [ -t 1 ]; then
             command -v fastfetch >/dev/null 2>&1 && fastfetch
@@ -73,37 +71,40 @@ jobs:
           CONFIG
           chown archuser:archuser /home/archuser/.bashrc
 
-          # 3. Jalankan Display Server TigerVNC di display :1
-          su - archuser -c "Xvnc :1 -geometry 1280x720 -depth 24 -rfbport 5901 -SecurityTypes None -ac -pn" > /home/archuser/xvnc.log 2>&1 &
+          # 2. Jalankan Display Server TigerVNC di display :1 (Port 5901)
+          su - archuser -c "Xvnc :1 -geometry 1280x720 -depth 24 -rfbport 5901 -SecurityTypes None -pn" > /home/archuser/xvnc.log 2>&1 &
 
           # Tunggu socket display :1 siap
           for i in {1..30}; do
             if [ -S /tmp/.X11-unix/X1 ]; then
+              echo "Xvnc display :1 siap!"
               break
             fi
             sleep 0.5
           done
 
-          # 4. Set root background solid agar tidak blank
-          export DISPLAY=:1
-          xsetroot -solid "#242933" 2>/dev/null || true
+          # 3. Jalankan Komponen Desktop Resmi XFCE Bawaan Arch Linux (100% Tangguh & Bebas Crash)
+          su - archuser -c "
+            export DISPLAY=:1
+            export XDG_CURRENT_DESKTOP=XFCE
+            export XDG_SESSION_TYPE=x11
+            export DESKTOP_SESSION=xfce
+            export LIBGL_ALWAYS_SOFTWARE=1
+            export GDK_BACKEND=x11
+            
+            dbus-run-session bash -c '
+              xfsettingsd &
+              xfwm4 --compositor=off &
+              xfce4-panel &
+              xfdesktop &
+              wait
+            '
+          " > /home/archuser/desktop.log 2>&1 &
 
-          # 5. Skrip Startup Resmi XFCE Bawaan Arch Linux (Murni xinitrc resmi, bebas error)
-          cat <<'SCRIPT' > /home/archuser/start-desktop.sh
-          #!/bin/bash
-          export DISPLAY=:1
-          export XDG_CURRENT_DESKTOP=XFCE
-          export DESKTOP_SESSION=xfce
-          eval $(dbus-launch --sh-syntax)
-          export DBUS_SESSION_BUS_ADDRESS
-
-          # Eksekusi xinitrc resmi XFCE bawaan Arch Linux
-          sh /etc/xdg/xfce4/xinitrc
-          SCRIPT
-          chmod +x /home/archuser/start-desktop.sh
-          chown archuser:archuser /home/archuser/start-desktop.sh
-
-          su - archuser -c "/home/archuser/start-desktop.sh" > /home/archuser/desktop.log 2>&1 &
+          sleep 3
+          echo "=== Status Log Desktop ==="
+          cat /home/archuser/desktop.log 2>/dev/null || true
+          echo "=========================="
 
           exec tail -f /home/archuser/xvnc.log /home/archuser/desktop.log
           EOF
@@ -112,7 +113,6 @@ jobs:
           cat <<'EOF' > Dockerfile
           FROM archlinux:latest
 
-          # Pasang komponen resmi Arch Linux murni dari repo resmi
           RUN pacman -Syu --noconfirm && \
               pacman -S --noconfirm \
                 xorg-server \
@@ -121,6 +121,8 @@ jobs:
                 xorg-xsetroot \
                 xfce4 \
                 xfce4-goodies \
+                xfce4-terminal \
+                mousepad \
                 firefox \
                 fastfetch \
                 tigervnc \
