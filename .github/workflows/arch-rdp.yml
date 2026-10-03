@@ -54,7 +54,7 @@ jobs:
 
           sudo systemctl restart xrdp
 
-      - name: 3. Bangun & Jalankan Desktop Arch Linux ORI (XFCE + Firefox + Fastfetch)
+      - name: 3. Bangun & Jalankan Desktop Arch Linux ORI Lengkap (Seperti Laptop Asli)
         run: |
           cat <<'EOF' > entrypoint.sh
           #!/bin/bash
@@ -81,18 +81,9 @@ jobs:
           # 2. Set background Arch Blue solid
           xsetroot -solid "#1793d1" 2>/dev/null || true
 
-          # 3. Jalankan D-Bus Session dan seluruh komponen desktop resmi XFCE
-          echo "Memulai sesi desktop resmi Arch Linux XFCE..."
-          exec dbus-run-session bash -c '
-            xfconfd &
-            sleep 0.5
-            xfsettingsd &
-            xfwm4 --compositor=off &
-            xfce4-panel &
-            xfdesktop &
-            xfce4-terminal &
-            wait
-          '
+          # 3. Jalankan Desktop Sesi Resmi XFCE Bawaan Penuh (Persis seperti laptop / PC asli!)
+          echo "Memulai sesi desktop resmi Arch Linux (xfce4-session)..."
+          exec dbus-run-session xfce4-session
           EOF
           chmod +x entrypoint.sh
 
@@ -165,7 +156,7 @@ jobs:
           echo "IP TAILSCALE TERBARU: $TAILSCALE_IP"
           echo "Port                : 3389"
           echo "OS                  : Arch Linux ORI (Rolling Release)"
-          echo "Desktop             : Official XFCE4 Desktop"
+          echo "Desktop             : Official XFCE4 Desktop (Lengkap Seperti Laptop Asli)"
           echo "Aplikasi Web        : Firefox (Bawaan Resmi)"
           echo "User                : archuser"
           echo "Password            : pochi@333"
