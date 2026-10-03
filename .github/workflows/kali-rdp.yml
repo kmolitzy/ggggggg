@@ -47,17 +47,18 @@ jobs:
           git remote set-url origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/kmolitzy/ggggggg.git"
           git push origin main || true
 
-      - name: 3. Pasang & Konfigurasi xrdp Gateway
+      - name: 3. Pasang & Konfigurasi xrdp Gateway (Pure Auto-Login Tanpa Dialog)
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq xrdp netcat-openbsd
 
           sudo python3 - <<'PY'
           from pathlib import Path
+          import re
           p = Path('/etc/xrdp/xrdp.ini')
           s = p.read_text()
-          s = s.replace('autorun=', 'autorun=KaliLinux')
-          s = s.replace('hidelogwindow=no', 'hidelogwindow=yes')
+          s = re.sub(r'#?\s*autorun=.*', 'autorun=KaliLinux', s)
+          s = re.sub(r'#?\s*hidelogwindow=.*', 'hidelogwindow=yes', s)
           
           vnc_entry = """[KaliLinux]
           name=KaliLinux
@@ -67,7 +68,7 @@ jobs:
           username=na
           password=
           """
-          s = s.replace('[Xorg]', vnc_entry + '\n[Xorg]')
+          s = re.sub(r'\[Xorg\]', vnc_entry + '\n[Xorg]', s)
           p.write_text(s)
           PY
 
@@ -79,14 +80,14 @@ jobs:
           #!/bin/bash
           set -e
 
+          # 1. Pastikan direktori X11 & D-Bus siap
           mkdir -p /tmp/.X11-unix
           chmod 1777 /tmp/.X11-unix
-
-          # 1. Pastikan direktori Desktop dan konfigurasi XFCE milik user kali
-          mkdir -p /home/kali/Desktop
-          mkdir -p /home/kali/.config/xfce4/xfconf/xfce-perchannel-xml
+          dbus-uuidgen --ensure=/etc/machine-id 2>/dev/null || true
 
           # 2. Buat Shortcut Desktop untuk OpenCode & 9Router
+          mkdir -p /home/kali/Desktop
+
           cat <<'DESK' > /home/kali/Desktop/opencode.desktop
           [Desktop Entry]
           Version=1.0
@@ -142,8 +143,8 @@ jobs:
           chmod +x /home/kali/Desktop/*.desktop
           chown -R kali:kali /home/kali
 
-          # 3. Jalankan Display Server TigerVNC di Port 5901
-          su - kali -c "Xvnc :1 -geometry 1366x768 -depth 24 -rfbport 5901 -SecurityTypes None -pn" > /home/kali/xvnc.log 2>&1 &
+          # 3. Jalankan Display Server TigerVNC di Port 5901 (SecurityTypes None,TLSNone)
+          su - kali -c "Xvnc :1 -geometry 1366x768 -depth 24 -rfbport 5901 -SecurityTypes None,TLSNone -pn" > /home/kali/xvnc.log 2>&1 &
 
           # Tunggu socket display :1 siap
           for i in {1..30}; do
@@ -154,33 +155,52 @@ jobs:
             sleep 0.5
           done
 
-          # 4. Jalankan Sesi Desktop Resmi Kali Linux (XFCE4 Original)
+          # 4. Set root background solid agar tidak ada layar hitam
+          export DISPLAY=:1
+          xsetroot -solid "#1a1b26" 2>/dev/null || true
+
+          # 5. Jalankan Sesi Desktop Resmi Kali Linux (XFCE4 Official Session)
           su - kali -c "
             export DISPLAY=:1
             export XDG_CURRENT_DESKTOP=XFCE
             export DESKTOP_SESSION=xfce
             export XDG_SESSION_TYPE=x11
-            dbus-run-session startxfce4
-          " > /home/kali/xfce.log 2>&1 &
+            export LIBGL_ALWAYS_SOFTWARE=1
+            export GDK_BACKEND=x11
 
-          # Terapkan tema resmi Kali-Dark dan wallpaper resmi Kali
+            if command -v xfce4-session >/dev/null 2>&1; then
+              dbus-run-session xfce4-session
+            else
+              dbus-run-session bash -c '
+                xfsettingsd &
+                xfwm4 --compositor=off &
+                xfce4-panel &
+                xfdesktop &
+                wait
+              '
+            fi
+          " > /home/kali/desktop.log 2>&1 &
+
+          # 6. Terapkan tema resmi Kali-Dark dan wallpaper resmi Kali
           (
-            sleep 5
+            sleep 4
             su - kali -c "
               export DISPLAY=:1
-              xfconf-query -c xsettings -p /Net/ThemeName -s 'Kali-Dark' 2>/dev/null || true
-              xfconf-query -c xsettings -p /Net/IconThemeName -s 'Flat-Remix-Blue-Dark' 2>/dev/null || true
+              xfconf-query -c xsettings -p /Net/ThemeName -s 'Kali-Dark' --create -t string 2>/dev/null || true
+              xfconf-query -c xsettings -p /Net/IconThemeName -s 'Flat-Remix-Blue-Dark' --create -t string 2>/dev/null || true
+              xfconf-query -c xfwm4 -p /general/theme -s 'Kali-Dark' --create -t string 2>/dev/null || true
+              xfconf-query -c xfwm4 -p /general/use_compositing -s 'false' --create -t bool 2>/dev/null || true
               
-              # Set Kali official wallpaper
-              KALI_WP=\$(find /usr/share/backgrounds -type f \( -name '*.png' -o -name '*.jpg' \) 2>/dev/null | grep -i kali | head -n 1)
+              KALI_WP=\$(find /usr/share/backgrounds /usr/share/wallpapers -type f \( -name '*.png' -o -name '*.jpg' \) 2>/dev/null | grep -i kali | head -n 1)
               if [ -n \"\$KALI_WP\" ]; then
-                xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitor0/workspace0/last-image -s \"\$KALI_WP\" 2>/dev/null || true
+                xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitor0/workspace0/last-image -s \"\$KALI_WP\" --create -t string 2>/dev/null || true
+                xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitorVNC-0/workspace0/last-image -s \"\$KALI_WP\" --create -t string 2>/dev/null || true
               fi
             " 2>/dev/null || true
           ) &
 
           sleep 2
-          exec tail -f /home/kali/xvnc.log /home/kali/xfce.log
+          exec tail -f /home/kali/xvnc.log /home/kali/desktop.log
           EOF
           chmod +x entrypoint.sh
 
@@ -189,10 +209,15 @@ jobs:
 
           ENV DEBIAN_FRONTEND=noninteractive
 
-          # 1. Update repositori resmi Kali Linux & Pasang Desktop Asli Kali (XFCE Official) + Tools
+          # 1. Update repositori resmi Kali Linux & Pasang Desktop Asli Kali (XFCE Official Lengkap) + Tools
           RUN apt-get update && \
               apt-get install -y --no-install-recommends \
-                kali-desktop-xfce \
+                xfce4 \
+                xfce4-goodies \
+                xfce4-session \
+                xfce4-panel \
+                xfdesktop4 \
+                xfwm4 \
                 xfce4-terminal \
                 thunar \
                 tigervnc-standalone-server \
