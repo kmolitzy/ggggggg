@@ -6,7 +6,7 @@ on:
 jobs:
   arch-rdp:
     runs-on: ubuntu-latest
-    timeout-minutes: 36000
+    timeout-minutes: 360
 
     steps:
       - name: 1. Hubungkan Tailscale di Host
@@ -32,7 +32,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq xrdp netcat-openbsd
 
-          # Konfigurasi xrdp agar langsung auto-login ke Arch Linux di port 5901 tanpa dialog prompt
+          # Konfigurasi xrdp agar auto-login langsung ke Arch Linux di port 5901
           sudo python3 - <<'PY'
           from pathlib import Path
           p = Path('/etc/xrdp/xrdp.ini')
@@ -54,146 +54,37 @@ jobs:
 
           sudo systemctl restart xrdp
 
-      - name: 3. Bangun & Jalankan Arch Linux Resmi (Multi-Tema Modern + Neofetch + Sasuke 4K)
+      - name: 3. Bangun & Jalankan Official Arch Linux (ORI + Firefox + Fastfetch)
         run: |
           cat <<'EOF' > entrypoint.sh
           #!/bin/bash
-          set -e
 
-          # 1. Pastikan Machine-ID & Sistem D-Bus Aktif (Mencegah Layar Hitam / Black Screen)
+          # 1. Pastikan Machine-ID & Sistem D-Bus Aktif
           mkdir -p /var/run/dbus /tmp/.X11-unix
           chmod 1777 /tmp/.X11-unix
           dbus-uuidgen --ensure=/etc/machine-id
           dbus-daemon --system --fork 2>/dev/null || true
 
-          # 2. Unduh Wallpaper Sasuke 4K (Pinterest)
-          mkdir -p /usr/share/wallpapers /usr/share/backgrounds/xfce
-          echo "Mengunduh wallpaper Sasuke..."
-          curl -sSL "https://i.pinimg.com/originals/9f/37/33/9f37339f9b9de1081394d746d96d52e3.jpg" -o /usr/share/wallpapers/sasuke.jpg || true
-
-          # Ganti seluruh background default bawaan XFCE dengan Sasuke 4K
-          for bg in /usr/share/backgrounds/xfce/*; do
-            cp /usr/share/wallpapers/sasuke.jpg "$bg" 2>/dev/null || true
-          done
-
-          # 3. Unduh Paket Multi-Tema Modern (Nordic, Dracula, Catppuccin)
-          echo "Mengunduh tema modern..."
-          mkdir -p /usr/share/themes
-          cd /tmp
-          
-          # Tema 1: Nordic Darker
-          curl -sSL "https://github.com/EliverLara/Nordic/releases/download/v2.2.0/Nordic-darker.tar.xz" -o nordic.tar.xz || true
-          if [ -f nordic.tar.xz ]; then
-            tar -xf nordic.tar.xz -C /usr/share/themes/ || true
-          fi
-
-          # Tema 2: Dracula
-          curl -sSL "https://github.com/dracula/gtk/archive/master.tar.gz" -o dracula.tar.gz || true
-          if [ -f dracula.tar.gz ]; then
-            tar -xf dracula.tar.gz -C /usr/share/themes/ || true
-            mv /usr/share/themes/gtk-master /usr/share/themes/Dracula 2>/dev/null || true
-          fi
-
-          # Tema 3: Catppuccin Mocha
-          curl -sSL "https://github.com/catppuccin/gtk/releases/download/v1.0.3/catppuccin-mocha-blue-standard%2Bdefault.zip" -o catppuccin.zip || true
-          if [ -f catppuccin.zip ]; then
-            unzip -q catppuccin.zip -d /usr/share/themes/ || true
-          fi
-          cd /
-
-          # 4. Pasang Neofetch secara langsung
-          echo "Memasang Neofetch..."
-          curl -sSL "https://raw.githubusercontent.com/dylanaraps/neofetch/master/neofetch" -o /usr/local/bin/neofetch || true
-          chmod +x /usr/local/bin/neofetch || true
-
-          # 5. Setup Konfigurasi Archuser (.bashrc auto-neofetch & profil modern)
-          mkdir -p /home/archuser/.config/xfce4/xfconf/xfce-perchannel-xml
-
+          # 2. Setup ~/.bashrc agar terminal menampilkan fastfetch resmi Arch Linux
           cat <<'CONFIG' >> /home/archuser/.bashrc
           if [ -t 1 ]; then
-            if command -v neofetch >/dev/null 2>&1; then
-              neofetch
-            elif command -v fastfetch >/dev/null 2>&1; then
-              fastfetch
-            fi
+            command -v fastfetch >/dev/null 2>&1 && fastfetch
           fi
           CONFIG
+          chown archuser:archuser /home/archuser/.bashrc
 
-          # Tema Bawaan: Nordic Darker + Icon Papirus-Dark
-          cat <<'CONFIG' > /home/archuser/.config/xfce4/xfconf/xfce-perchannel-xml/xsettings.xml
-          <?xml version="1.0" encoding="UTF-8"?>
-          <channel name="xsettings" version="1.0">
-            <property name="Net" type="empty">
-              <property name="ThemeName" type="string" value="Nordic-darker"/>
-              <property name="IconThemeName" type="string" value="Papirus-Dark"/>
-              <property name="DoubleClickTime" type="int" value="400"/>
-              <property name="DoubleClickDistance" type="int" value="5"/>
-              <property name="DndDragThreshold" type="int" value="8"/>
-              <property name="CursorThemeName" type="string" value="Adwaita"/>
-              <property name="CursorThemeSize" type="int" value="24"/>
-            </property>
-            <property name="Xft" type="empty">
-              <property name="DPI" type="int" value="96"/>
-              <property name="Antialias" type="int" value="1"/>
-              <property name="Hinting" type="int" value="1"/>
-              <property name="HintStyle" type="string" value="hintslight"/>
-              <property name="RGBA" type="string" value="rgb"/>
-            </property>
-          </channel>
-          CONFIG
-
-          # Window Manager: Nordic Theme + use_compositing=false (Mencegah Glitch/Layar Hitam di VNC)
-          cat <<'CONFIG' > /home/archuser/.config/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml
-          <?xml version="1.0" encoding="UTF-8"?>
-          <channel name="xfwm4" version="1.0">
-            <property name="general" type="empty">
-              <property name="theme" type="string" value="Nordic-darker"/>
-              <property name="button_layout" type="string" value="O|HMC"/>
-              <property name="title_alignment" type="string" value="left"/>
-              <property name="title_shadow_active" type="string" value="false"/>
-              <property name="title_shadow_inactive" type="string" value="false"/>
-              <property name="use_compositing" type="bool" value="false"/>
-            </property>
-          </channel>
-          CONFIG
-
-          # Shortcut keyboard: tombol Super (Win di HP 0X1) membuka menu
-          cat <<'CONFIG' > /home/archuser/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-keyboard-shortcuts.xml
-          <?xml version="1.0" encoding="UTF-8"?>
-          <channel name="xfce4-keyboard-shortcuts" version="1.0">
-            <property name="commands" type="empty">
-              <property name="custom" type="empty">
-                <property name="Super_L" type="string" value="xfce4-popup-applicationsmenu"/>
-                <property name="Super_R" type="string" value="xfce4-popup-applicationsmenu"/>
-                <property name="&lt;Super&gt;space" type="string" value="xfce4-popup-applicationsmenu"/>
-                <property name="&lt;Super&gt;Return" type="string" value="xfce4-terminal"/>
-                <property name="&lt;Super&gt;e" type="string" value="thunar"/>
-              </property>
-            </property>
-          </channel>
-          CONFIG
-
-          chown -R archuser:archuser /home/archuser
-
-          # 6. Jalankan Display Server TigerVNC dengan flag -ac (Disable Access Control)
-          echo "Menjalankan Xvnc display :1..."
+          # 3. Jalankan Display Server TigerVNC di display :1
           su - archuser -c "Xvnc :1 -geometry 1280x720 -depth 24 -rfbport 5901 -SecurityTypes None -ac -pn" > /home/archuser/xvnc.log 2>&1 &
 
           # Tunggu socket display :1 siap
           for i in {1..30}; do
             if [ -S /tmp/.X11-unix/X1 ]; then
-              echo "Xvnc display :1 siap!"
               break
             fi
             sleep 0.5
           done
 
-          # 7. Pasang Root Window Background
-          export DISPLAY=:1
-          xsetroot -solid "#1a1b26" 2>/dev/null || true
-          feh --bg-fill /usr/share/wallpapers/sasuke.jpg 2>/dev/null || true
-
-          # 8. Buat Skrip Peluncur Desktop Tangguh (Telah Teruji 100% Valid Tanpa Layar Hitam)
+          # 4. Skrip Startup Resmi XFCE Bawaan Arch Linux (Murni xinitrc resmi, bebas error)
           cat <<'SCRIPT' > /home/archuser/start-desktop.sh
           #!/bin/bash
           export DISPLAY=:1
@@ -202,50 +93,13 @@ jobs:
           eval $(dbus-launch --sh-syntax)
           export DBUS_SESSION_BUS_ADDRESS
 
-          # Daemon background otomatis untuk set wallpaper Sasuke 4K begitu xfdesktop aktif
-          (
-            for attempt in {1..20}; do
-              if pgrep -x "xfdesktop" >/dev/null; then
-                sleep 1
-                xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitorVNC-0/workspace0/last-image -s /usr/share/wallpapers/sasuke.jpg --create -t string 2>/dev/null || true
-                xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitorVNC-0/workspace0/image-style -s 5 --create -t int 2>/dev/null || true
-                xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitor0/workspace0/last-image -s /usr/share/wallpapers/sasuke.jpg --create -t string 2>/dev/null || true
-                xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitor0/workspace0/image-style -s 5 --create -t int 2>/dev/null || true
-                break
-              fi
-              sleep 0.5
-            done
-          ) &
-
-          # Jalankan sesi xfce4-session
-          if command -v xfce4-session >/dev/null 2>&1; then
-            xfce4-session &
-          fi
-
-          # Supervisor fallback: jika komponen utama belum aktif, jalankan manual
-          sleep 2
-          if ! pgrep -x "xfwm4" >/dev/null; then
-            xfwm4 --compositor=off &
-          fi
-          if ! pgrep -x "xfce4-panel" >/dev/null; then
-            xfce4-panel &
-          fi
-          if ! pgrep -x "xfdesktop" >/dev/null; then
-            xfdesktop &
-          fi
-
-          wait
+          # Eksekusi xinitrc resmi XFCE bawaan Arch Linux
+          sh /etc/xdg/xfce4/xinitrc
           SCRIPT
           chmod +x /home/archuser/start-desktop.sh
           chown archuser:archuser /home/archuser/start-desktop.sh
 
-          echo "Menjalankan sesi XFCE Desktop..."
           su - archuser -c "/home/archuser/start-desktop.sh" > /home/archuser/desktop.log 2>&1 &
-
-          sleep 4
-          echo "=== Status Log Desktop ==="
-          cat /home/archuser/desktop.log 2>/dev/null || true
-          echo "=========================="
 
           exec tail -f /home/archuser/xvnc.log /home/archuser/desktop.log
           EOF
@@ -254,27 +108,20 @@ jobs:
           cat <<'EOF' > Dockerfile
           FROM archlinux:latest
 
-          # Pasang seluruh komponen X11, D-Bus, XFCE4, Tema Modern, Feh, Scrot, dan Tools Lengkap
+          # Pasang komponen resmi Arch Linux murni dari repo resmi
           RUN pacman -Syu --noconfirm && \
               pacman -S --noconfirm \
                 xorg-server \
                 xorg-xinit \
                 xorg-xauth \
-                xorg-xsetroot \
-                xorg-xrdb \
-                xorg-xrandr \
                 xfce4 \
                 xfce4-goodies \
-                papirus-icon-theme \
-                feh \
-                tigervnc \
-                sudo \
-                dbus \
-                curl \
-                wget \
-                unzip \
-                fastfetch \
                 firefox \
+                fastfetch \
+                tigervnc \
+                dbus \
+                sudo \
+                xorg-xrandr \
                 ttf-dejavu \
                 ttf-liberation \
                 iproute2 && \
@@ -286,6 +133,8 @@ jobs:
               echo "archuser ALL=(ALL) ALL" >> /etc/sudoers
 
           COPY entrypoint.sh /entrypoint.sh
+          RUN chmod +x /entrypoint.sh
+
           ENTRYPOINT ["/entrypoint.sh"]
           EOF
 
@@ -309,19 +158,18 @@ jobs:
       - name: 4. Informasi Akses
         run: |
           echo "=========================================="
-          echo "    ARCH LINUX OFFICIAL MODERN RDP        "
+          echo "       ARCH LINUX OFFICIAL RDP            "
           echo "=========================================="
           echo "IP Tailscale : $TAILSCALE_IP"
           echo "Port         : 3389"
-          echo "OS           : Arch Linux ORI (Official Rolling Release)"
-          echo "Desktop      : Arch Official Desktop (Multi-Theme Modern)"
-          echo "Tema Aktif   : Nordic Darker / Dracula / Catppuccin / Papirus-Dark"
-          echo "Wallpaper    : Sasuke Uchiha (Pinterest 4K)"
+          echo "OS           : Arch Linux ORI (Rolling Release)"
+          echo "Desktop      : Official XFCE4 Desktop"
+          echo "Aplikasi Web : Firefox (Bawaan Resmi)"
           echo "User         : archuser"
           echo "Password     : pochi@333"
           echo "=========================================="
 
           while true; do
-            echo "[$(date '+%H:%M:%S')] Arch Linux Modern Active..."
+            echo "[$(date '+%H:%M:%S')] Arch Linux Official Active..."
             sleep 60
           done
