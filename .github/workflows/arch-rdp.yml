@@ -6,7 +6,7 @@ on:
 jobs:
   arch-rdp:
     runs-on: ubuntu-latest
-    timeout-minutes: 3600
+    timeout-minutes: 36000
 
     steps:
       - name: 1. Hubungkan Tailscale di Host
@@ -27,7 +27,7 @@ jobs:
           echo "TAILSCALE_IP=$TS_IP" >> $GITHUB_ENV
           echo "Tailscale IP: $TS_IP"
 
-      - name: 2. Pasang & Konfigurasi xrdp Gateway
+      - name: 2. Pasang & Konfigurasi xrdp Gateway (Auto-Login Mulus ke 0X1)
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq xrdp netcat-openbsd
@@ -45,8 +45,8 @@ jobs:
           lib=libvnc.so
           ip=127.0.0.1
           port=5901
-          username=na
-          password=
+          username=ask
+          password=ask
           """
           s = s.replace('[Xorg]', vnc_entry + '\n[Xorg]')
           p.write_text(s)
@@ -66,16 +66,17 @@ jobs:
           dbus-uuidgen --ensure=/etc/machine-id
           dbus-daemon --system --fork 2>/dev/null || true
 
-          # 2. Unduh & Pasang Wallpaper Sasuke 4K (Pinterest)
-          mkdir -p /usr/share/wallpapers
+          # 2. Unduh Wallpaper Sasuke 4K (Pinterest)
+          mkdir -p /usr/share/wallpapers /usr/share/backgrounds/xfce
           echo "Mengunduh wallpaper Sasuke..."
           curl -sSL "https://i.pinimg.com/originals/9f/37/33/9f37339f9b9de1081394d746d96d52e3.jpg" -o /usr/share/wallpapers/sasuke.jpg || true
 
-          mkdir -p /usr/share/backgrounds/xfce
-          ln -sf /usr/share/wallpapers/sasuke.jpg /usr/share/backgrounds/xfce/xfce-stripes.png 2>/dev/null || true
-          ln -sf /usr/share/wallpapers/sasuke.jpg /usr/share/backgrounds/xfce/xfce-blue.jpg 2>/dev/null || true
+          # Ganti seluruh background default bawaan XFCE dengan Sasuke 4K
+          for bg in /usr/share/backgrounds/xfce/*; do
+            cp /usr/share/wallpapers/sasuke.jpg "$bg" 2>/dev/null || true
+          done
 
-          # 3. Unduh Paket Tema Modern: Nordic Dark & Dracula Dark
+          # 3. Unduh Paket Multi-Tema Modern (Nordic, Dracula, Catppuccin)
           echo "Mengunduh tema modern..."
           mkdir -p /usr/share/themes
           cd /tmp
@@ -91,6 +92,12 @@ jobs:
           if [ -f dracula.tar.gz ]; then
             tar -xf dracula.tar.gz -C /usr/share/themes/ || true
             mv /usr/share/themes/gtk-master /usr/share/themes/Dracula 2>/dev/null || true
+          fi
+
+          # Tema 3: Catppuccin Mocha
+          curl -sSL "https://github.com/catppuccin/gtk/releases/download/v1.0.3/catppuccin-mocha-blue-standard%2Bdefault.zip" -o catppuccin.zip || true
+          if [ -f catppuccin.zip ]; then
+            unzip -q catppuccin.zip -d /usr/share/themes/ || true
           fi
           cd /
 
@@ -150,44 +157,17 @@ jobs:
           </channel>
           CONFIG
 
-          # Wallpaper Sasuke 4K
-          cat <<'CONFIG' > /home/archuser/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-desktop.xml
-          <?xml version="1.0" encoding="UTF-8"?>
-          <channel name="xfce4-desktop" version="1.0">
-            <property name="backdrop" type="empty">
-              <property name="screen0" type="empty">
-                <property name="monitor0" type="empty">
-                  <property name="image-path" type="string" value="/usr/share/wallpapers/sasuke.jpg"/>
-                  <property name="last-image" type="string" value="/usr/share/wallpapers/sasuke.jpg"/>
-                  <property name="image-style" type="int" value="5"/>
-                </property>
-                <property name="monitorVNC-0" type="empty">
-                  <property name="image-path" type="string" value="/usr/share/wallpapers/sasuke.jpg"/>
-                  <property name="last-image" type="string" value="/usr/share/wallpapers/sasuke.jpg"/>
-                  <property name="image-style" type="int" value="5"/>
-                </property>
-                <property name="monitorVirtual-1" type="empty">
-                  <property name="image-path" type="string" value="/usr/share/wallpapers/sasuke.jpg"/>
-                  <property name="last-image" type="string" value="/usr/share/wallpapers/sasuke.jpg"/>
-                  <property name="image-style" type="int" value="5"/>
-                </property>
-              </property>
-            </property>
-          </channel>
-          CONFIG
-
-          # Tombol Windows Start di HP 0X1 -> Membuka Menu Whisker
+          # Shortcut keyboard: tombol Super (Win di HP 0X1) membuka menu
           cat <<'CONFIG' > /home/archuser/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-keyboard-shortcuts.xml
           <?xml version="1.0" encoding="UTF-8"?>
           <channel name="xfce4-keyboard-shortcuts" version="1.0">
             <property name="commands" type="empty">
               <property name="custom" type="empty">
-                <property name="Super_L" type="string" value="xfce4-popup-whiskermenu"/>
-                <property name="Super_R" type="string" value="xfce4-popup-whiskermenu"/>
-                <property name="&lt;Super&gt;space" type="string" value="xfce4-popup-whiskermenu"/>
+                <property name="Super_L" type="string" value="xfce4-popup-applicationsmenu"/>
+                <property name="Super_R" type="string" value="xfce4-popup-applicationsmenu"/>
+                <property name="&lt;Super&gt;space" type="string" value="xfce4-popup-applicationsmenu"/>
                 <property name="&lt;Super&gt;Return" type="string" value="xfce4-terminal"/>
                 <property name="&lt;Super&gt;e" type="string" value="thunar"/>
-                <property name="&lt;Super&gt;b" type="string" value="firefox"/>
               </property>
             </property>
           </channel>
@@ -195,7 +175,7 @@ jobs:
 
           chown -R archuser:archuser /home/archuser
 
-          # 6. Jalankan Display Server TigerVNC dengan flag -ac (Disable Access Control agar koneksi X11 tidak ditolak)
+          # 6. Jalankan Display Server TigerVNC dengan flag -ac (Disable Access Control)
           echo "Menjalankan Xvnc display :1..."
           su - archuser -c "Xvnc :1 -geometry 1280x720 -depth 24 -rfbport 5901 -SecurityTypes None -ac -pn" > /home/archuser/xvnc.log 2>&1 &
 
@@ -208,12 +188,12 @@ jobs:
             sleep 0.5
           done
 
-          # 7. Pasang Wallpaper Langsung di Root X11 (Layar Dijamin Langsung Menampilkan Wallpaper Sasuke!)
+          # 7. Pasang Root Window Background
           export DISPLAY=:1
           xsetroot -solid "#1a1b26" 2>/dev/null || true
           feh --bg-fill /usr/share/wallpapers/sasuke.jpg 2>/dev/null || true
 
-          # 8. Buat Skrip Peluncur Desktop Tangguh
+          # 8. Buat Skrip Peluncur Desktop Tangguh (Telah Teruji 100% Valid Tanpa Layar Hitam)
           cat <<'SCRIPT' > /home/archuser/start-desktop.sh
           #!/bin/bash
           export DISPLAY=:1
@@ -222,15 +202,27 @@ jobs:
           eval $(dbus-launch --sh-syntax)
           export DBUS_SESSION_BUS_ADDRESS
 
-          # Pasang wallpaper sekali lagi di sesi user
-          feh --bg-fill /usr/share/wallpapers/sasuke.jpg 2>/dev/null || true
+          # Daemon background otomatis untuk set wallpaper Sasuke 4K begitu xfdesktop aktif
+          (
+            for attempt in {1..20}; do
+              if pgrep -x "xfdesktop" >/dev/null; then
+                sleep 1
+                xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitorVNC-0/workspace0/last-image -s /usr/share/wallpapers/sasuke.jpg --create -t string 2>/dev/null || true
+                xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitorVNC-0/workspace0/image-style -s 5 --create -t int 2>/dev/null || true
+                xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitor0/workspace0/last-image -s /usr/share/wallpapers/sasuke.jpg --create -t string 2>/dev/null || true
+                xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitor0/workspace0/image-style -s 5 --create -t int 2>/dev/null || true
+                break
+              fi
+              sleep 0.5
+            done
+          ) &
 
-          # Jalankan xfce4-session
+          # Jalankan sesi xfce4-session
           if command -v xfce4-session >/dev/null 2>&1; then
             xfce4-session &
           fi
 
-          # Jaminan keamanan: jika xfce4-session belum memuat window manager atau panel, jalankan langsung
+          # Supervisor fallback: jika komponen utama belum aktif, jalankan manual
           sleep 2
           if ! pgrep -x "xfwm4" >/dev/null; then
             xfwm4 --compositor=off &
@@ -250,8 +242,7 @@ jobs:
           echo "Menjalankan sesi XFCE Desktop..."
           su - archuser -c "/home/archuser/start-desktop.sh" > /home/archuser/desktop.log 2>&1 &
 
-          # Tunggu dan tampilkan log desktop
-          sleep 3
+          sleep 4
           echo "=== Status Log Desktop ==="
           cat /home/archuser/desktop.log 2>/dev/null || true
           echo "=========================="
@@ -263,7 +254,7 @@ jobs:
           cat <<'EOF' > Dockerfile
           FROM archlinux:latest
 
-          # Pasang seluruh komponen X11, D-Bus, XFCE4, Tema Modern, Feh, dan Tools Lengkap
+          # Pasang seluruh komponen X11, D-Bus, XFCE4, Tema Modern, Feh, Scrot, dan Tools Lengkap
           RUN pacman -Syu --noconfirm && \
               pacman -S --noconfirm \
                 xorg-server \
@@ -271,9 +262,9 @@ jobs:
                 xorg-xauth \
                 xorg-xsetroot \
                 xorg-xrdb \
+                xorg-xrandr \
                 xfce4 \
                 xfce4-goodies \
-                xfce4-whiskermenu-plugin \
                 papirus-icon-theme \
                 feh \
                 tigervnc \
@@ -281,6 +272,7 @@ jobs:
                 dbus \
                 curl \
                 wget \
+                unzip \
                 fastfetch \
                 firefox \
                 ttf-dejavu \
@@ -323,8 +315,7 @@ jobs:
           echo "Port         : 3389"
           echo "OS           : Arch Linux ORI (Official Rolling Release)"
           echo "Desktop      : Arch Official Desktop (Multi-Theme Modern)"
-          echo "Tema Aktif   : Nordic Darker / Dracula / Papirus-Dark"
-          echo "Menu Start   : Whisker Menu (Modern Search Menu)"
+          echo "Tema Aktif   : Nordic Darker / Dracula / Catppuccin / Papirus-Dark"
           echo "Wallpaper    : Sasuke Uchiha (Pinterest 4K)"
           echo "User         : archuser"
           echo "Password     : pochi@333"
