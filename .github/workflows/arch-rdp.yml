@@ -27,12 +27,12 @@ jobs:
           echo "TAILSCALE_IP=$TS_IP" >> $GITHUB_ENV
           echo "Tailscale IP: $TS_IP"
 
-      - name: 2. Pasang & Konfigurasi xrdp Gateway (Auto-Login Mulus ke 0X1)
+      - name: 2. Pasang & Konfigurasi xrdp Gateway
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq xrdp netcat-openbsd
 
-          # Konfigurasi xrdp agar auto-login langsung ke Arch Linux di port 5901
+          # Konfigurasi xrdp agar auto-login mulus ke port 5901 Arch Linux
           sudo python3 - <<'PY'
           from pathlib import Path
           p = Path('/etc/xrdp/xrdp.ini')
@@ -84,7 +84,11 @@ jobs:
             sleep 0.5
           done
 
-          # 4. Skrip Startup Resmi XFCE Bawaan Arch Linux (Murni xinitrc resmi, bebas error)
+          # 4. Set root background solid agar tidak blank
+          export DISPLAY=:1
+          xsetroot -solid "#242933" 2>/dev/null || true
+
+          # 5. Skrip Startup Resmi XFCE Bawaan Arch Linux (Murni xinitrc resmi, bebas error)
           cat <<'SCRIPT' > /home/archuser/start-desktop.sh
           #!/bin/bash
           export DISPLAY=:1
@@ -114,6 +118,7 @@ jobs:
                 xorg-server \
                 xorg-xinit \
                 xorg-xauth \
+                xorg-xsetroot \
                 xfce4 \
                 xfce4-goodies \
                 firefox \
@@ -160,16 +165,16 @@ jobs:
           echo "=========================================="
           echo "       ARCH LINUX OFFICIAL RDP            "
           echo "=========================================="
-          echo "IP Tailscale : $TAILSCALE_IP"
-          echo "Port         : 3389"
-          echo "OS           : Arch Linux ORI (Rolling Release)"
-          echo "Desktop      : Official XFCE4 Desktop"
-          echo "Aplikasi Web : Firefox (Bawaan Resmi)"
-          echo "User         : archuser"
-          echo "Password     : pochi@333"
+          echo "IP TAILSCALE TERBARU: $TAILSCALE_IP"
+          echo "Port                : 3389"
+          echo "OS                  : Arch Linux ORI (Rolling Release)"
+          echo "Desktop             : Official XFCE4 Desktop"
+          echo "Aplikasi Web        : Firefox (Bawaan Resmi)"
+          echo "User                : archuser"
+          echo "Password            : pochi@333"
           echo "=========================================="
 
           while true; do
-            echo "[$(date '+%H:%M:%S')] Arch Linux Official Active..."
+            echo "[$(date '+%H:%M:%S')] Arch Linux Official Active at IP $TAILSCALE_IP..."
             sleep 60
           done
