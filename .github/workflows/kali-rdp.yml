@@ -1,0 +1,224 @@
+name: Kali Linux Modern RDP
+
+on:
+  workflow_dispatch:
+
+jobs:
+  kali-rdp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: 1. Hubungkan Tailscale di Host
+        run: |
+          curl -fsSL https://tailscale.com/install.sh | sudo sh
+          sudo tailscale up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=kali-runner-${{ github.run_id }}
+          
+          TS_IP=""
+          for i in {1..15}; do
+            TS_IP=$(tailscale ip -4 2>/dev/null || true)
+            if [ -n "$TS_IP" ]; then break; fi
+            sleep 2
+          done
+          
+          if [ -z "$TS_IP" ]; then
+            echo "Gagal mendapatkan IP Tailscale" && exit 1
+          fi
+          echo "TAILSCALE_IP=$TS_IP" >> $GITHUB_ENV
+          echo "Tailscale IP: $TS_IP"
+
+      - name: 2. Pasang & Konfigurasi xrdp Gateway
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xrdp netcat-openbsd
+
+          # Konfigurasi xrdp agar langsung auto-login ke Kali Linux di port 5901 tanpa dialog prompt
+          sudo python3 - <<'PY'
+          from pathlib import Path
+          p = Path('/etc/xrdp/xrdp.ini')
+          s = p.read_text()
+          s = s.replace('autorun=', 'autorun=KaliLinux')
+          s = s.replace('hidelogwindow=no', 'hidelogwindow=yes')
+          
+          vnc_entry = """[KaliLinux]
+          name=KaliLinux
+          lib=libvnc.so
+          ip=127.0.0.1
+          port=5901
+          username=na
+          password=
+          """
+          s = s.replace('[Xorg]', vnc_entry + '\n[Xorg]')
+          p.write_text(s)
+          PY
+
+          sudo systemctl restart xrdp
+
+      - name: 3. Bangun & Jalankan Desktop Kali Linux Modern (KDE Plasma)
+        run: |
+          cat <<'EOF' > entrypoint.sh
+          #!/bin/bash
+          set -e
+
+          mkdir -p /tmp/.X11-unix
+          chmod 1777 /tmp/.X11-unix
+
+          # 1. Download & Pasang Wallpaper Sasuke (Pinterest)
+          mkdir -p /usr/share/wallpapers
+          echo "Mengunduh wallpaper Sasuke..."
+          curl -sSL "https://i.pinimg.com/originals/9f/37/33/9f37339f9b9de1081394d746d96d52e3.jpg" -o /usr/share/wallpapers/sasuke.jpg || true
+
+          mkdir -p /home/kali/Pictures
+          cp /usr/share/wallpapers/sasuke.jpg /home/kali/Pictures/sasuke.jpg 2>/dev/null || true
+
+          # Ganti semua fallback default wallpaper agar otomatis menampilkan Sasuke
+          find /usr/share/wallpapers -type f \( -name "*.jpg" -o -name "*.png" \) ! -name "sasuke.jpg" 2>/dev/null | while read f; do
+            ln -sf /usr/share/wallpapers/sasuke.jpg "$f" 2>/dev/null || true
+          done
+
+          # 2. Konfigurasi Tema Modern (Breeze / Kali Dark) & Wallpaper di KDE Plasma
+          mkdir -p /home/kali/.config
+
+          cat <<'CONFIG' > /home/kali/.config/kdeglobals
+          [General]
+          ColorScheme=BreezeDark
+          Name=Breeze Dark
+          CONFIG
+
+          cat <<'CONFIG' > /home/kali/.config/kwinrc
+          [Compositing]
+          Enabled=false
+          CONFIG
+
+          cat <<'CONFIG' > /home/kali/.config/plasma-org.kde.plasma.desktop-appletsrc
+          [Containments][1]
+          formfactor=0
+          immutability=1
+          lastScreen=0
+          location=0
+          plugin=org.kde.plasma.folder
+          wallpaperplugin=org.kde.image
+
+          [Containments][1][Wallpaper][org.kde.image][General]
+          Image=file:///usr/share/wallpapers/sasuke.jpg
+          CONFIG
+
+          chown -R kali:kali /home/kali
+
+          # 3. Jalankan Display Server TigerVNC di Port 5901
+          su - kali -c "Xvnc :1 -geometry 1280x720 -depth 24 -rfbport 5901 -SecurityTypes None -pn" > /home/kali/xvnc.log 2>&1 &
+
+          # Tunggu socket display :1 siap
+          for i in {1..30}; do
+            if [ -S /tmp/.X11-unix/X1 ]; then
+              echo "Xvnc display :1 siap!"
+              break
+            fi
+            sleep 0.5
+          done
+
+          # 4. Jalankan Sesi Desktop Modern KDE Plasma
+          su - kali -c "
+            export DISPLAY=:1
+            export XDG_CURRENT_DESKTOP=KDE
+            export KDE_FULL_SESSION=true
+            export XDG_SESSION_TYPE=x11
+            export DESKTOP_SESSION=plasma
+            export LIBGL_ALWAYS_SOFTWARE=1
+            export QT_QUICK_BACKEND=software
+            
+            if command -v startplasma-x11 >/dev/null 2>&1; then
+              dbus-run-session startplasma-x11
+            elif command -v startkde >/dev/null 2>&1; then
+              dbus-run-session startkde
+            else
+              dbus-run-session plasma-desktop
+            fi
+          " > /home/kali/plasma.log 2>&1 &
+
+          # Terapkan wallpaper via CLI tools setelah Plasma siap
+          (
+            sleep 10
+            su - kali -c "DISPLAY=:1 plasma-apply-wallpaperimage /usr/share/wallpapers/sasuke.jpg" 2>/dev/null || true
+          ) &
+
+          sleep 2
+          exec tail -f /home/kali/xvnc.log /home/kali/plasma.log
+          EOF
+          chmod +x entrypoint.sh
+
+          cat <<'EOF' > Dockerfile
+          FROM kalilinux/kali-rolling:latest
+
+          ENV DEBIAN_FRONTEND=noninteractive
+
+          # Update repositori resmi Kali Linux & Pasang Desktop KDE Plasma Modern + Tools Pentest Populer
+          RUN apt-get update && \
+              apt-get install -y --no-install-recommends \
+                kde-plasma-desktop \
+                plasma-workspace \
+                konsole \
+                dolphin \
+                tigervnc-standalone-server \
+                dbus-x11 \
+                x11-xserver-utils \
+                kali-themes \
+                curl \
+                wget \
+                sudo \
+                fastfetch \
+                net-tools \
+                iproute2 \
+                ca-certificates \
+                fonts-dejavu-core \
+                fonts-noto-core \
+                nmap \
+                firefox-esr && \
+              apt-get clean && \
+              rm -rf /var/lib/apt/lists/*
+
+          # Buat user kali dengan hak akses sudo penuh
+          RUN useradd -m -s /bin/bash -u 1000 kali && \
+              echo "kali:pochi@333" | chpasswd && \
+              echo "kali ALL=(ALL) ALL" >> /etc/sudoers
+
+          COPY entrypoint.sh /entrypoint.sh
+          ENTRYPOINT ["/entrypoint.sh"]
+          EOF
+
+          docker build -t kali-rdp .
+          docker run -d --name kali-desktop --net=host --privileged kali-rdp
+
+          # Tunggu dan pastikan port 5901 VNC aktif
+          echo "Memverifikasi port 5901 VNC Kali Linux..."
+          for i in {1..30}; do
+            if nc -z 127.0.0.1 5901; then
+              echo "Port 5901 VNC Kali Linux AKTIF & SIAP!"
+              break
+            fi
+            sleep 1
+          done
+
+          # Cek status container
+          docker ps
+          docker logs kali-desktop || true
+
+      - name: 4. Informasi Akses
+        run: |
+          echo "=========================================="
+          echo "    KALI LINUX MODERN RDP SUDAH AKTIF     "
+          echo "=========================================="
+          echo "IP Tailscale : $TAILSCALE_IP"
+          echo "Port         : 3389"
+          echo "OS           : Kali Linux (Rolling Release Terbaru)"
+          echo "Desktop      : KDE Plasma (Modern Dark Mode)"
+          echo "Wallpaper    : Sasuke Uchiha (Pinterest 4K)"
+          echo "User         : kali"
+          echo "Password     : pochi@333"
+          echo "=========================================="
+
+          while true; do
+            echo "[$(date '+%H:%M:%S')] Kali Linux Modern Active..."
+            sleep 60
+          done
+          
