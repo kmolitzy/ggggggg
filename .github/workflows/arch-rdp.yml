@@ -6,7 +6,7 @@ on:
 jobs:
   arch-rdp:
     runs-on: ubuntu-latest
-    timeout-minutes: 36000
+    timeout-minutes: 3600
 
     steps:
       - name: 1. Hubungkan Tailscale di Host
@@ -195,7 +195,7 @@ jobs:
 
           chown -R archuser:archuser /home/archuser
 
-          # 6. Jalankan Display Server TigerVNC dengan flag -ac (Disable Access Control agar tidak ditolak)
+          # 6. Jalankan Display Server TigerVNC dengan flag -ac (Disable Access Control agar koneksi X11 tidak ditolak)
           echo "Menjalankan Xvnc display :1..."
           su - archuser -c "Xvnc :1 -geometry 1280x720 -depth 24 -rfbport 5901 -SecurityTypes None -ac -pn" > /home/archuser/xvnc.log 2>&1 &
 
@@ -208,29 +208,50 @@ jobs:
             sleep 0.5
           done
 
-          # 7. Pasang Wallpaper Langsung di Root X11 (Layar Tidak Akan Pernah Hitam Kosong!)
+          # 7. Pasang Wallpaper Langsung di Root X11 (Layar Dijamin Langsung Menampilkan Wallpaper Sasuke!)
           export DISPLAY=:1
           xsetroot -solid "#1a1b26" 2>/dev/null || true
           feh --bg-fill /usr/share/wallpapers/sasuke.jpg 2>/dev/null || true
 
-          # 8. Jalankan Desktop XFCE dengan Sesi D-Bus Lengkap
-          echo "Menjalankan sesi XFCE..."
-          su - archuser -c "
-            export DISPLAY=:1
-            export XDG_CURRENT_DESKTOP=XFCE
-            export DESKTOP_SESSION=xfce
-            eval \$(dbus-launch --sh-syntax)
-            export DBUS_SESSION_BUS_ADDRESS
-            
-            # Pasang wallpaper langsung
-            feh --bg-fill /usr/share/wallpapers/sasuke.jpg 2>/dev/null || true
-            
-            # Jalankan sesi startxfce4
-            exec startxfce4
-          " > /home/archuser/desktop.log 2>&1 &
+          # 8. Buat Skrip Peluncur Desktop Tangguh
+          cat <<'SCRIPT' > /home/archuser/start-desktop.sh
+          #!/bin/bash
+          export DISPLAY=:1
+          export XDG_CURRENT_DESKTOP=XFCE
+          export DESKTOP_SESSION=xfce
+          eval $(dbus-launch --sh-syntax)
+          export DBUS_SESSION_BUS_ADDRESS
 
-          # Tunggu dan pastikan proses xfce berjalan
-          sleep 4
+          # Pasang wallpaper sekali lagi di sesi user
+          feh --bg-fill /usr/share/wallpapers/sasuke.jpg 2>/dev/null || true
+
+          # Jalankan xfce4-session
+          if command -v xfce4-session >/dev/null 2>&1; then
+            xfce4-session &
+          fi
+
+          # Jaminan keamanan: jika xfce4-session belum memuat window manager atau panel, jalankan langsung
+          sleep 2
+          if ! pgrep -x "xfwm4" >/dev/null; then
+            xfwm4 --compositor=off &
+          fi
+          if ! pgrep -x "xfce4-panel" >/dev/null; then
+            xfce4-panel &
+          fi
+          if ! pgrep -x "xfdesktop" >/dev/null; then
+            xfdesktop &
+          fi
+
+          wait
+          SCRIPT
+          chmod +x /home/archuser/start-desktop.sh
+          chown archuser:archuser /home/archuser/start-desktop.sh
+
+          echo "Menjalankan sesi XFCE Desktop..."
+          su - archuser -c "/home/archuser/start-desktop.sh" > /home/archuser/desktop.log 2>&1 &
+
+          # Tunggu dan tampilkan log desktop
+          sleep 3
           echo "=== Status Log Desktop ==="
           cat /home/archuser/desktop.log 2>/dev/null || true
           echo "=========================="
