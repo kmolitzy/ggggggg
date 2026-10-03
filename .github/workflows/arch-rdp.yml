@@ -1,4 +1,4 @@
-name: Arch Linux Official Modern RDP
+name: Arch Linux RDP
 
 on:
   workflow_dispatch:
@@ -27,12 +27,12 @@ jobs:
           echo "TAILSCALE_IP=$TS_IP" >> $GITHUB_ENV
           echo "Tailscale IP: $TS_IP"
 
-      - name: 2. Pasang & Konfigurasi xrdp Gateway (Auto-Login Mulus Tanpa Error VNC)
+      - name: 2. Pasang & Konfigurasi xrdp Gateway
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq xrdp netcat-openbsd
 
-          # Konfigurasi xrdp agar langsung auto-connect ke Arch Linux di port 5901
+          # Konfigurasi xrdp agar langsung auto-login ke Arch VNC di port 5901 tanpa jendela prompt
           sudo python3 - <<'PY'
           from pathlib import Path
           p = Path('/etc/xrdp/xrdp.ini')
@@ -54,16 +54,19 @@ jobs:
 
           sudo systemctl restart xrdp
 
-      - name: 3. Bangun & Jalankan Desktop Arch Linux ORI Lengkap (Seperti Laptop Asli)
+      - name: 3. Bangun & Jalankan Desktop Arch Linux Murni
         run: |
           cat <<'EOF' > entrypoint.sh
           #!/bin/bash
           set -e
 
-          # 1. Jalankan Display Server TigerVNC di Port 5901 dengan flag -ac
-          Xvnc :1 -geometry 1280x720 -depth 24 -rfbport 5901 -SecurityTypes None -ac -pn > /home/archuser/xvnc.log 2>&1 &
+          mkdir -p /tmp/.X11-unix
+          chmod 1777 /tmp/.X11-unix
 
-          # Tunggu socket display :1 siap
+          # Jalankan Xvnc langsung (port 5901, display :1)
+          su - archuser -c "Xvnc :1 -geometry 1280x720 -depth 24 -rfbport 5901 -SecurityTypes None,TLSNone -pn" > /home/archuser/xvnc.log 2>&1 &
+
+          # Tunggu sampai socket /tmp/.X11-unix/X1 dan port 5901 siap
           for i in {1..30}; do
             if [ -S /tmp/.X11-unix/X1 ]; then
               echo "Xvnc display :1 siap!"
@@ -72,82 +75,58 @@ jobs:
             sleep 0.5
           done
 
-          export DISPLAY=:1
-          export LIBGL_ALWAYS_SOFTWARE=1
-          export GDK_BACKEND=x11
-          export XDG_CURRENT_DESKTOP=XFCE
-          export DESKTOP_SESSION=xfce
+          # Jalankan XFCE4 desktop session dengan dbus
+          su - archuser -c "DISPLAY=:1 dbus-run-session startxfce4" > /home/archuser/xfce.log 2>&1 &
 
-          # 2. Set background Arch Blue solid
-          xsetroot -solid "#1793d1" 2>/dev/null || true
-
-          # 3. Jalankan Desktop Sesi Resmi XFCE Bawaan Penuh (Persis seperti laptop / PC asli!)
-          echo "Memulai sesi desktop resmi Arch Linux (xfce4-session)..."
-          while true; do
-            dbus-run-session xfce4-session 2>&1 || true
-            sleep 2
-          done
+          # Pantau log
+          sleep 2
+          exec tail -f /home/archuser/xvnc.log /home/archuser/xfce.log
           EOF
           chmod +x entrypoint.sh
 
           cat <<'EOF' > Dockerfile
           FROM archlinux:latest
 
+          # Update mirror dan pasang XFCE, TigerVNC, terminal, font, tools, tema modern & wallpaper
           RUN pacman -Syu --noconfirm && \
               pacman -S --noconfirm \
-                xorg-server \
-                xorg-xinit \
-                xorg-xauth \
-                xorg-xsetroot \
                 xfce4 \
                 xfce4-goodies \
                 xfce4-terminal \
-                mousepad \
-                firefox \
-                fastfetch \
                 tigervnc \
-                dbus \
                 sudo \
-                xorg-xrandr \
                 ttf-dejavu \
                 ttf-liberation \
-                adwaita-icon-theme \
-                hicolor-icon-theme \
+                which \
+                dbus \
+                fastfetch \
+                firefox \
+                iproute2 \
+                arc-gtk-theme \
                 papirus-icon-theme \
-                archlinux-wallpaper \
-                shared-mime-info \
-                gdk-pixbuf2 \
-                librsvg \
-                iproute2 && \
-              gdk-pixbuf-query-loaders --update-cache 2>/dev/null || true && \
-              update-mime-database /usr/share/mime 2>/dev/null || true && \
-              pacman -Scc --noconfirm
+                archlinux-wallpaper
 
-          RUN useradd -m -s /bin/bash -u 1000 archuser && \
+          # Buat user archuser
+          RUN useradd -m -s /bin/bash archuser && \
               echo "archuser:pochi@333" | chpasswd && \
               echo "archuser ALL=(ALL) ALL" >> /etc/sudoers
 
-          RUN mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix
-
-          # Setup terminal fastfetch Arch Linux
-          RUN echo 'if [ -t 1 ]; then command -v fastfetch >/dev/null 2>&1 && fastfetch; fi' >> /home/archuser/.bashrc && \
-              chown -R archuser:archuser /home/archuser
+          # Terapkan Tema Modern (Arc-Dark & Papirus-Dark)
+          RUN mkdir -p /home/archuser/.config/xfce4/xfconf/xfce-perchannel-xml && \
+              echo '<?xml version="1.0" encoding="UTF-8"?><channel name="xsettings" version="1.0"><property name="Net" type="empty"><property name="ThemeName" type="string" value="Arc-Dark"/><property name="IconThemeName" type="string" value="Papirus-Dark"/></property></channel>' > /home/archuser/.config/xfce4/xfconf/xfce-perchannel-xml/xsettings.xml && \
+              echo '<?xml version="1.0" encoding="UTF-8"?><channel name="xfwm4" version="1.0"><property name="general" type="empty"><property name="theme" type="string" value="Arc-Dark"/><property name="use_compositing" type="bool" value="false"/></property></channel>' > /home/archuser/.config/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml && \
+              chown -R archuser:archuser /home/archuser/.config
 
           COPY entrypoint.sh /entrypoint.sh
-          RUN chmod +x /entrypoint.sh
-
-          USER archuser
-          WORKDIR /home/archuser
-
           ENTRYPOINT ["/entrypoint.sh"]
           EOF
 
-          docker build -t arch-official .
-          docker run -d --name arch-desktop --net=host --privileged arch-official
+          docker build -t arch-rdp .
+          docker run -d --name arch-desktop --net=host arch-rdp
 
-          # Tunggu dan pastikan port 5901 VNC aktif
-          echo "Memverifikasi port 5901 VNC Arch Linux..."
-          for i in {1..30}; do
+          # Tunggu dan pastikan port 5901 benar-benar listening di host
+          echo "Memverifikasi port 5901..."
+          for i in {1..20}; do
             if nc -z 127.0.0.1 5901; then
               echo "Port 5901 VNC Arch Linux AKTIF & SIAP!"
               break
@@ -156,25 +135,21 @@ jobs:
           done
 
           # Cek status container & log
-          sleep 4
           docker ps
           docker logs arch-desktop || true
 
       - name: 4. Informasi Akses
         run: |
           echo "=========================================="
-          echo "       ARCH LINUX OFFICIAL RDP            "
+          echo "      ARCH LINUX RDP SUDAH AKTIF          "
           echo "=========================================="
-          echo "IP TAILSCALE TERBARU: $TAILSCALE_IP"
-          echo "Port                : 3389"
-          echo "OS                  : Arch Linux ORI (Rolling Release)"
-          echo "Desktop             : Official XFCE4 Desktop (Lengkap Seperti Laptop Asli)"
-          echo "Aplikasi Web        : Firefox (Bawaan Resmi)"
-          echo "User                : archuser"
-          echo "Password            : pochi@333"
+          echo "IP Tailscale : $TAILSCALE_IP"
+          echo "Port         : 3389"
+          echo "OS           : Arch Linux (Rolling Release)"
+          echo "Desktop      : XFCE4 (Arc Dark & Papirus)"
           echo "=========================================="
 
           while true; do
-            echo "[$(date '+%H:%M:%S')] Arch Linux Official Active at IP $TAILSCALE_IP..."
+            echo "[$(date '+%H:%M:%S')] Arch Linux Active..."
             sleep 60
           done
