@@ -1,4 +1,7 @@
-Runner Active: arch-runner-37115616207
-Buka aplikasi Tailscale di Android, cari perangkat: arch-runner-37115616207
-Copy IP Tailscale perangkat tersebut (contoh: 100.x.y.z) lalu buka di 0X1!
-Download Aplikasi 0X1 langsung di browser HP: http://<IP-Tailscale>:8080
+Runner Kali Linux Active: kali-runner-37129448993
+Buka aplikasi Tailscale di Android / Laptop, cari perangkat: kali-runner-37129448993
+Hubungkan via RDP (Port 3389) menggunakan IP Tailscale perangkat tersebut!
+Username: kali
+Password: pochi@333
+Desktop: XFCE Official (Kali-Dark + Dragon Wallpaper)
+AI Tools: OpenCode & 9Router
