@@ -91,7 +91,6 @@ jobs:
           RUN pacman -Syu --noconfirm && \
               pacman -S --noconfirm \
                 xfce4 \
-                xfce4-goodies \
                 xfce4-terminal \
                 tigervnc \
                 sudo \
@@ -101,21 +100,22 @@ jobs:
                 dbus \
                 fastfetch \
                 firefox \
-                iproute2 \
-                arc-gtk-theme \
                 papirus-icon-theme \
-                archlinux-wallpaper
+                archlinux-wallpaper \
+                iproute2 && \
+              pacman -Scc --noconfirm
 
           # Buat user archuser
           RUN useradd -m -s /bin/bash archuser && \
               echo "archuser:pochi@333" | chpasswd && \
               echo "archuser ALL=(ALL) ALL" >> /etc/sudoers
 
-          # Terapkan Tema Modern (Arc-Dark & Papirus-Dark)
+          # Terapkan Tema Modern (Adwaita-Dark & Papirus-Dark)
           RUN mkdir -p /home/archuser/.config/xfce4/xfconf/xfce-perchannel-xml && \
-              echo '<?xml version="1.0" encoding="UTF-8"?><channel name="xsettings" version="1.0"><property name="Net" type="empty"><property name="ThemeName" type="string" value="Arc-Dark"/><property name="IconThemeName" type="string" value="Papirus-Dark"/></property></channel>' > /home/archuser/.config/xfce4/xfconf/xfce-perchannel-xml/xsettings.xml && \
-              echo '<?xml version="1.0" encoding="UTF-8"?><channel name="xfwm4" version="1.0"><property name="general" type="empty"><property name="theme" type="string" value="Arc-Dark"/><property name="use_compositing" type="bool" value="false"/></property></channel>' > /home/archuser/.config/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml && \
-              chown -R archuser:archuser /home/archuser/.config
+              echo '<?xml version="1.0" encoding="UTF-8"?><channel name="xsettings" version="1.0"><property name="Net" type="empty"><property name="ThemeName" type="string" value="Adwaita-dark"/><property name="IconThemeName" type="string" value="Papirus-Dark"/></property></channel>' > /home/archuser/.config/xfce4/xfconf/xfce-perchannel-xml/xsettings.xml && \
+              echo '<?xml version="1.0" encoding="UTF-8"?><channel name="xfwm4" version="1.0"><property name="general" type="empty"><property name="theme" type="string" value="Default-hdpi"/><property name="use_compositing" type="bool" value="false"/></property></channel>' > /home/archuser/.config/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml && \
+              echo 'if [ -t 1 ]; then command -v fastfetch >/dev/null 2>&1 && fastfetch; fi' >> /home/archuser/.bashrc && \
+              chown -R archuser:archuser /home/archuser
 
           COPY entrypoint.sh /entrypoint.sh
           ENTRYPOINT ["/entrypoint.sh"]
@@ -146,7 +146,7 @@ jobs:
           echo "IP Tailscale : $TAILSCALE_IP"
           echo "Port         : 3389"
           echo "OS           : Arch Linux (Rolling Release)"
-          echo "Desktop      : XFCE4 (Arc Dark & Papirus)"
+          echo "Desktop      : XFCE4 (Dark Mode & Papirus Icons)"
           echo "=========================================="
 
           while true; do
