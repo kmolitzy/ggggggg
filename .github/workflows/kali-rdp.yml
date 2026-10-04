@@ -2,6 +2,11 @@ name: Kali Linux Official XFCE RDP
 
 on:
   workflow_dispatch:
+    inputs:
+      trigger:
+        description: 'Trigger'
+        required: false
+        default: 'manual'
 
 permissions:
   contents: write
