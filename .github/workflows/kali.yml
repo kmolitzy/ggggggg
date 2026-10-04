@@ -39,6 +39,7 @@ jobs:
           echo "TAILSCALE_IP=$TS_IP" >> $GITHUB_ENV
           echo "Tailscale IP Aktif: $TS_IP"
 
+<<<<<<< HEAD
       - name: 3. Pasang & Konfigurasi xrdp Gateway (Anti-Black-Screen)
         run: |
           sudo apt-get update -qq
@@ -63,11 +64,15 @@ jobs:
           sudo systemctl restart xrdp
 
       - name: 4. Bangun & Jalankan Desktop Kali Linux Murni (XFCE Official ORI + OpenCode + 9Router)
+=======
+      - name: 3. Bangun & Jalankan Kali Linux Native XRDP (Official XFCE + OpenCode + 9Router)
+>>>>>>> 7c1544a (feat(kali): Switch to official native xorgxrdp with 2GB SHM, eliminating VNC proxy black screen)
         run: |
           cat <<'EOF' > entrypoint.sh
           #!/bin/bash
           set -e
 
+<<<<<<< HEAD
           mkdir -p /tmp/.X11-unix /var/run/dbus
           chmod 1777 /tmp/.X11-unix
           dbus-uuidgen --ensure=/etc/machine-id 2>/dev/null || true
@@ -145,6 +150,33 @@ jobs:
 
           sleep 3
           exec tail -f /home/kali/xvnc.log /home/kali/xfce.log
+=======
+          # 1. Siapkan direktori sistem
+          mkdir -p /var/run/dbus /var/run/xrdp /tmp/.X11-unix
+          chmod 1777 /tmp/.X11-unix
+          dbus-uuidgen --ensure=/etc/machine-id 2>/dev/null || true
+          service dbus start || true
+
+          # 2. Pastikan file log xrdp ada
+          touch /var/log/xrdp.log /var/log/xrdp-sesman.log
+          chmod 666 /var/log/xrdp.log /var/log/xrdp-sesman.log
+
+          # 3. Jalankan xrdp & xrdp-sesman resmi Kali
+          echo "Memulai xrdp-sesman & xrdp daemon..."
+          /etc/init.d/xrdp start
+
+          # 4. Verifikasi port 3389 aktif
+          for i in {1..20}; do
+            if netstat -tlpn 2>/dev/null | grep -q ":3389"; then
+              echo "xrdp port 3389 BERHASIL LISTENING!"
+              break
+            fi
+            sleep 1
+          done
+
+          echo "=== Kali Linux Desktop RDP Siap Digunakan ==="
+          exec tail -f /var/log/xrdp.log /var/log/xrdp-sesman.log
+>>>>>>> 7c1544a (feat(kali): Switch to official native xorgxrdp with 2GB SHM, eliminating VNC proxy black screen)
           EOF
           chmod +x entrypoint.sh
 
@@ -153,6 +185,7 @@ jobs:
 
           ENV DEBIAN_FRONTEND=noninteractive
 
+<<<<<<< HEAD
           # Pasang XFCE Resmi, TigerVNC, Tools Kali, OpenCode, Node.js & 9Router
           RUN apt-get update && \
               apt-get install -y --no-install-recommends \
@@ -172,6 +205,16 @@ jobs:
                 xorg \
                 xinit \
                 xauth \
+=======
+          # 1. Pasang Desktop XFCE Resmi Kali, xorg, xrdp & xorgxrdp (Native RDP resmi)
+          RUN apt-get update && \
+              apt-get install -y --no-install-recommends \
+                kali-desktop-xfce \
+                xorg \
+                xrdp \
+                xorgxrdp \
+                dbus-x11 \
+>>>>>>> 7c1544a (feat(kali): Switch to official native xorgxrdp with 2GB SHM, eliminating VNC proxy black screen)
                 kali-themes \
                 kali-defaults \
                 curl \
@@ -184,11 +227,18 @@ jobs:
                 fonts-dejavu-core \
                 fonts-noto-core \
                 nmap \
+<<<<<<< HEAD
                 firefox-esr && \
+=======
+                firefox-esr \
+                nodejs \
+                npm && \
+>>>>>>> 7c1544a (feat(kali): Switch to official native xorgxrdp with 2GB SHM, eliminating VNC proxy black screen)
               apt-get remove --purge -y light-locker xscreensaver xfce4-screensaver xfce4-power-manager 2>/dev/null || true && \
               apt-get clean && \
               rm -rf /var/lib/apt/lists/*
 
+<<<<<<< HEAD
           # Buat user kali resmi dengan hak sudo penuh
           RUN useradd -m -s /bin/bash -u 1000 kali && \
               echo "kali:pochi@333" | chpasswd && \
@@ -206,6 +256,29 @@ jobs:
               rm -rf /var/lib/apt/lists/*
 
           # Buat Desktop Shortcuts di Desktop Kali Linux & pastikan izin direktori bebas permission denied
+=======
+          # 2. Buat user kali dengan password & hak akses
+          RUN useradd -m -s /bin/bash -u 1000 kali && \
+              echo "kali:pochi@333" | chpasswd && \
+              echo "kali ALL=(ALL) ALL" >> /etc/sudoers && \
+              adduser kali ssl-cert
+
+          # 3. Konfigurasi Desktop Session XFCE untuk xrdp
+          RUN echo "exec dbus-run-session -- startxfce4" > /home/kali/.xsession && \
+              chmod +x /home/kali/.xsession && \
+              chown kali:kali /home/kali/.xsession
+
+          # 4. Konfigurasi startwm.sh xrdp agar pasti memuat sesi XFCE
+          RUN printf '#!/bin/sh\nif [ -r /etc/default/locale ]; then\n  . /etc/default/locale\n  export LANG LANGUAGE\nfi\nunset DBUS_SESSION_BUS_ADDRESS\nunset XDG_RUNTIME_DIR\nexport XDG_CURRENT_DESKTOP=XFCE\nexport DESKTOP_SESSION=xfce\nexec dbus-run-session -- startxfce4\n' > /etc/xrdp/startwm.sh && \
+              chmod +x /etc/xrdp/startwm.sh
+
+          # 5. Pasang OpenCode CLI & 9Router
+          RUN curl -fsSL https://github.com/anomalyco/opencode/releases/latest/download/opencode-linux-x64.tar.gz | tar -xz -C /usr/local/bin && \
+              chmod +x /usr/local/bin/opencode && \
+              npm install -g 9router
+
+          # 6. Buat Desktop Shortcuts
+>>>>>>> 7c1544a (feat(kali): Switch to official native xorgxrdp with 2GB SHM, eliminating VNC proxy black screen)
           RUN mkdir -p /home/kali/Desktop && \
               echo '[Desktop Entry]\nVersion=1.0\nType=Application\nName=OpenCode Agent\nComment=Terminal AI Coding Agent\nExec=xfce4-terminal -T "OpenCode AI Agent" -e "opencode"\nIcon=utilities-terminal\nTerminal=false\nCategories=Development;' > /home/kali/Desktop/OpenCode.desktop && \
               echo '[Desktop Entry]\nVersion=1.0\nType=Application\nName=9Router Gateway\nComment=AI Gateway for LLMs\nExec=xfce4-terminal -T "9Router Gateway" -e "9router"\nIcon=network-wired\nTerminal=false\nCategories=Network;' > /home/kali/Desktop/9Router.desktop && \
@@ -220,6 +293,7 @@ jobs:
           ENTRYPOINT ["/entrypoint.sh"]
           EOF
 
+<<<<<<< HEAD
           docker build -t kali-rdp .
           docker run -d --name kali-desktop --net=host --privileged kali-rdp
 
@@ -228,16 +302,37 @@ jobs:
           for i in {1..30}; do
             if nc -z 127.0.0.1 5901; then
               echo "Port 5901 VNC Kali Linux AKTIF & SIAP!"
+=======
+          # Hentikan service xrdp host jika ada
+          sudo systemctl stop xrdp 2>/dev/null || true
+
+          docker build -t kali-native-rdp .
+          # JALANKAN DENGAN --shm-size 2g AGAR XORG TIDAK CRASH KARENA MEMORY BUFFER HABIS
+          docker run -d --name kali-desktop --net=host --privileged --shm-size 2g kali-native-rdp
+
+          # Verifikasi port 3389 di host
+          echo "Memverifikasi port 3389..."
+          for i in {1..30}; do
+            if sudo netstat -tlpn 2>/dev/null | grep -q ":3389"; then
+              echo "Port 3389 RDP Kali Linux AKTIF & SIAP!"
+>>>>>>> 7c1544a (feat(kali): Switch to official native xorgxrdp with 2GB SHM, eliminating VNC proxy black screen)
               break
             fi
             sleep 1
           done
 
+<<<<<<< HEAD
           # Cek status container
           docker ps
           docker logs kali-desktop || true
 
       - name: 5. Lapor IP & Detail Akses Kali ke Repositori
+=======
+          docker ps
+          docker logs kali-desktop || true
+
+      - name: 4. Lapor IP & Detail Akses Kali ke Repositori
+>>>>>>> 7c1544a (feat(kali): Switch to official native xorgxrdp with 2GB SHM, eliminating VNC proxy black screen)
         run: |
           cat << EOF > CURRENT_IP.txt
           ==================================================
@@ -246,15 +341,23 @@ jobs:
           IP Tailscale      : $TAILSCALE_IP
           Hostname Tailnet  : kali-runner-${{ github.run_id }}
           Port RDP          : 3389 (mstsc / 0X1 Desktop)
+<<<<<<< HEAD
           Port noVNC Web    : 6080 (Buka di browser)
+=======
+>>>>>>> 7c1544a (feat(kali): Switch to official native xorgxrdp with 2GB SHM, eliminating VNC proxy black screen)
           OS                : Kali Linux Official (Rolling)
           Desktop           : XFCE Official (ORI)
           User              : kali
           Password          : pochi@333
+<<<<<<< HEAD
+=======
+          Driver            : Native xorgxrdp (Anti-Black-Screen)
+>>>>>>> 7c1544a (feat(kali): Switch to official native xorgxrdp with 2GB SHM, eliminating VNC proxy black screen)
           --------------------------------------------------
           FITUR SIAP PAKAI:
           ✅ OpenCode CLI (AI Coding Agent)
           ✅ 9Router (AI Gateway Router)
+<<<<<<< HEAD
           ✅ Anti-Black-Screen (DPMS & Screensaver Purged)
           ✅ Desktop Shortcuts Ready di Layar
           --------------------------------------------------
@@ -265,25 +368,49 @@ jobs:
 
           2. Web Desktop Browser (noVNC Tanpa Black Screen):
              http://$TAILSCALE_IP:6080/vnc.html
+=======
+          ✅ Native xorgxrdp (Bebas VNC proxy & Bebas Black Screen)
+          ✅ 2GB Shared Memory (Anti crash saat render layar)
+          ✅ Desktop Shortcuts Ready di Layar
+          --------------------------------------------------
+          CARA AKSES:
+          1. Buka Remote Desktop Connection (mstsc) atau 0X1 Desktop
+          2. Masukkan Computer: $TAILSCALE_IP
+          3. Masukkan User    : kali
+          4. Masukkan Password: pochi@333
+>>>>>>> 7c1544a (feat(kali): Switch to official native xorgxrdp with 2GB SHM, eliminating VNC proxy black screen)
           ==================================================
           EOF
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add CURRENT_IP.txt
+<<<<<<< HEAD
           git commit -m "chore: Update Kali Linux Official RDP Info [Run ${{ github.run_id }}]" || true
           git push origin main || true
 
       - name: 6. Informasi Akses & Loop Aktif (6 Jam)
+=======
+          git commit -m "chore: Update Kali Linux Native RDP Info [Run ${{ github.run_id }}]" || true
+          git push origin main || true
+
+      - name: 5. Informasi Akses & Loop Aktif (6 Jam)
+>>>>>>> 7c1544a (feat(kali): Switch to official native xorgxrdp with 2GB SHM, eliminating VNC proxy black screen)
         run: |
           echo "=========================================="
           echo "    KALI LINUX OFFICIAL XFCE RDP AKTIF    "
           echo "=========================================="
           echo "IP Tailscale  : $TAILSCALE_IP"
           echo "Port RDP      : 3389"
+<<<<<<< HEAD
           echo "Port noVNC    : 6080 (http://$TAILSCALE_IP:6080/vnc.html)"
           echo "OS            : Kali Linux Official"
           echo "Desktop       : XFCE Official (ORI)"
+=======
+          echo "OS            : Kali Linux Official"
+          echo "Desktop       : XFCE Official (ORI)"
+          echo "Driver        : Native xorgxrdp"
+>>>>>>> 7c1544a (feat(kali): Switch to official native xorgxrdp with 2GB SHM, eliminating VNC proxy black screen)
           echo "User          : kali"
           echo "Password      : pochi@333"
           echo "=========================================="
