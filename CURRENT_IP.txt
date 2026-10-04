@@ -1,27 +1,27 @@
 ==================================================
-       🐉 KALI LINUX OFFICIAL XFCE RDP AKTIF 🐉
+       🚀 GITHUB ACTIONS CLOUD VPS AKTIF 🚀
 ==================================================
-IP Tailscale      : 100.76.186.111
-Hostname Tailnet  : kali-runner-37177549246
-Port RDP          : 3389 (mstsc / 0X1 Desktop)
-OS                : Kali Linux Official (Rolling)
-Desktop           : XFCE Official (ORI)
-User              : kali
+IP Tailscale      : 100.100.21.118
+Hostname Tailnet  : gh-vps-37178698253
+Port SSH          : 22 / 2222
+Port Web Terminal : 7681 (Buka di browser)
+Port noVNC Web GUI: 6080 (Buka di browser)
+Port RDP (xrdp)   : 3389
+User              : vps (dan root)
 Password          : pochi@333
-Driver            : Native xorgxrdp (Supervisor UI Mode)
---------------------------------------------------
-FITUR SIAP PAKAI:
-✅ OpenCode CLI (AI Coding Agent)
-✅ 9Router (AI Gateway Router)
-✅ Full Kali Wallpaper 2025
-✅ Full Icon Rendering (librsvg2 + Papirus/Flat-Remix)
-✅ Official Kali Panel (Whisker Dragon Menu & Taskbar)
-✅ Window Manager (xfwm4 tanpa OpenGL crash)
-✅ 2GB Shared Memory (Anti crash saat render)
 --------------------------------------------------
 CARA AKSES:
-1. Buka Remote Desktop Connection (mstsc) atau 0X1 Desktop
-2. Masukkan Computer: 100.76.186.111
-3. Masukkan User    : kali
-4. Masukkan Password: pochi@333
+1. SSH Langsung (Terminal):
+   ssh vps@100.100.21.118
+   (atau: tailscale ssh vps@gh-vps-37178698253)
+
+2. Web Terminal (Browser Tanpa Install):
+   http://100.100.21.118:7681
+
+3. Web Desktop (noVNC Browser Bebas Black Screen):
+   http://100.100.21.118:6080/vnc.html
+
+4. RDP Native (mstsc / 0X1 Desktop):
+   Host: 100.100.21.118:3389
+   User: vps | Pass: pochi@333
 ==================================================
