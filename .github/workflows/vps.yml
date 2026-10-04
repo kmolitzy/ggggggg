@@ -58,6 +58,11 @@ jobs:
           echo "root:${VPS_PASS}" | sudo chpasswd
           echo "vps ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/vps-nopasswd
 
+          # Beri izin penuh ke direktori runner & vps agar opencode & tool AI tidak permission denied (EACCES)
+          sudo chmod -R 777 /home/runner /home/vps 2>/dev/null || true
+          sudo mkdir -p /home/runner/.config /home/vps/.config
+          sudo chmod -R 777 /home/runner/.config /home/vps/.config 2>/dev/null || true
+
           # Konfigurasi SSH Daemon
           sudo apt-get update -y
           sudo apt-get install -y openssh-server
