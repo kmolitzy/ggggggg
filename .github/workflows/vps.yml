@@ -1,0 +1,229 @@
+name: GitHub Actions Cloud VPS
+
+on:
+  workflow_dispatch:
+    inputs:
+      vps_password:
+        description: 'Password untuk user VPS (vps & root)'
+        required: false
+        default: 'pochi@333'
+      install_gui:
+        description: 'Install Desktop GUI (XFCE + noVNC Web + xrdp)? (yes/no)'
+        required: false
+        default: 'yes'
+
+permissions:
+  contents: write
+
+jobs:
+  cloud-vps:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360 # 6 jam (batas maksimal GitHub Actions per job)
+
+    steps:
+      - name: 1. Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 2. Hubungkan Jaringan Tailscale & Aktifkan Tailscale SSH
+        env:
+          TAILSCALE_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
+        run: |
+          echo "=== [1/6] Memasang & Mengaktifkan Tailscale ==="
+          curl -fsSL https://tailscale.com/install.sh | sh
+          sudo tailscale up --authkey=${TAILSCALE_KEY} --hostname=gh-vps-${GITHUB_RUN_ID} --ssh --accept-routes
+
+          TS_IP=""
+          for i in {1..25}; do
+            TS_IP=$(tailscale ip -4 2>/dev/null || true)
+            if [ -n "$TS_IP" ]; then break; fi
+            sleep 2
+          done
+
+          if [ -z "$TS_IP" ]; then
+            echo "::error::Gagal mendapatkan IP Tailscale!"
+            exit 1
+          fi
+
+          echo "TAILSCALE_IP=$TS_IP" >> $GITHUB_ENV
+          echo "Tailscale IP aktif: $TS_IP"
+
+      - name: 3. Setup Akun VPS & Akses Root OpenSSH
+        env:
+          VPS_PASS: ${{ github.event.inputs.vps_password || 'pochi@333' }}
+        run: |
+          echo "=== [2/6] Mengkonfigurasi User & OpenSSH Server ==="
+          # Buat user 'vps' dengan akses sudo penuh
+          sudo id -u vps &>/dev/null || sudo useradd -m -s /bin/bash -G sudo,docker vps
+          echo "vps:${VPS_PASS}" | sudo chpasswd
+          echo "root:${VPS_PASS}" | sudo chpasswd
+          echo "vps ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/vps-nopasswd
+
+          # Konfigurasi SSH Daemon
+          sudo apt-get update -y
+          sudo apt-get install -y openssh-server
+          sudo sed -i 's/#PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
+          sudo sed -i 's/#PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+          sudo sed -i 's/PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
+          sudo sed -i 's/KbdInteractiveAuthentication no/KbdInteractiveAuthentication yes/' /etc/ssh/sshd_config
+          
+          # Tambahkan port 22 dan 2222
+          grep -q "Port 2222" /etc/ssh/sshd_config || echo "Port 2222" | sudo tee -a /etc/ssh/sshd_config
+          sudo systemctl restart ssh || sudo service ssh restart
+
+      - name: 4. Pasang Tooling VPS Lengkap (OpenCode, 9Router, Node.js, CLI Tools, Web Shell)
+        env:
+          VPS_PASS: ${{ github.event.inputs.vps_password || 'pochi@333' }}
+        run: |
+          echo "=== [3/6] Memasang Tooling & AI Agents ==="
+          sudo apt-get install -y htop btop tmux zsh jq curl wget git ufw net-tools nmap tree unzip build-essential python3 python3-pip
+
+          # Pasang OpenCode CLI (AI Coding Agent)
+          echo "Mengunduh OpenCode CLI..."
+          curl -fsSL https://github.com/anomalyco/opencode/releases/latest/download/opencode-linux-x64.tar.gz | sudo tar -xz -C /usr/local/bin
+          sudo chmod +x /usr/local/bin/opencode || true
+
+          # Pasang Node.js & 9Router
+          if ! command -v node &>/dev/null; then
+            curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+            sudo apt-get install -y nodejs
+          fi
+          sudo npm install -g 9router
+
+          # Pasang Web Terminal (ttyd) - Akses terminal via browser langsung!
+          echo "Mengunduh Web Terminal (ttyd)..."
+          sudo curl -fsSL -o /usr/local/bin/ttyd https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64
+          sudo chmod +x /usr/local/bin/ttyd
+
+          # Jalankan Web Terminal di port 7681 di background
+          nohup sudo -u vps ttyd -p 7681 -c vps:${VPS_PASS} bash > /tmp/ttyd.log 2>&1 &
+          echo "Web Terminal aktif di port 7681"
+
+      - name: 5. Pasang Desktop GUI (XFCE + noVNC Web Browser + xrdp)
+        if: ${{ github.event.inputs.install_gui != 'no' }}
+        env:
+          VPS_PASS: ${{ github.event.inputs.vps_password || 'pochi@333' }}
+        run: |
+          echo "=== [4/6] Menyiapkan Desktop GUI XFCE & noVNC Web ==="
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            xfce4 xfce4-goodies xfce4-terminal \
+            tigervnc-standalone-server novnc websockify xrdp ssl-cert dbus-x11
+
+          sudo usermod -a -G ssl-cert xrdp
+          sudo usermod -a -G ssl-cert vps
+
+          # Konfigurasi VNC untuk user vps
+          sudo -u vps mkdir -p /home/vps/.vps-desktop
+          cat << 'EOF' | sudo tee /home/vps/.vps-desktop/xstartup
+          #!/bin/bash
+          unset DBUS_SESSION_BUS_ADDRESS
+          unset XDG_RUNTIME_DIR
+          export XDG_CURRENT_DESKTOP=XFCE
+          export DESKTOP_SESSION=xfce
+          exec dbus-run-session -- startxfce4
+          EOF
+          sudo chmod +x /home/vps/.vps-desktop/xstartup
+
+          # Jalankan TigerVNC Server di :1 (port 5901)
+          nohup sudo -u vps Xvnc :1 -geometry 1280x720 -depth 24 -rfbport 5901 \
+            -SecurityTypes None,TLSNone -ac -pn > /tmp/xvnc.log 2>&1 &
+          sleep 2
+
+          # Jalankan sesi XFCE di display :1
+          nohup sudo -u vps env DISPLAY=:1 /home/vps/.vps-desktop/xstartup > /tmp/xfce.log 2>&1 &
+
+          # Jalankan noVNC Web (WebSockets -> VNC di port 6080)
+          nohup websockify --web /usr/share/novnc/ 6080 localhost:5901 > /tmp/novnc.log 2>&1 &
+          echo "noVNC Web Desktop aktif di port 6080"
+
+          # Konfigurasi xrdp untuk port 3389
+          cat << 'EOF' | sudo tee /etc/xrdp/startwm.sh
+          #!/bin/sh
+          if [ -r /etc/default/locale ]; then
+            . /etc/default/locale
+            export LANG LANGUAGE
+          fi
+          unset DBUS_SESSION_BUS_ADDRESS
+          unset XDG_RUNTIME_DIR
+          export XDG_CURRENT_DESKTOP=XFCE
+          export DESKTOP_SESSION=xfce
+          exec dbus-run-session -- startxfce4
+          EOF
+          sudo chmod +x /etc/xrdp/startwm.sh
+          echo "xfce4-session" | sudo tee /home/vps/.xsession
+          sudo chown vps:vps /home/vps/.xsession
+          sudo systemctl restart xrdp || sudo service xrdp restart
+
+      - name: 6. Lapor IP & Detail Akses VPS ke Repositori
+        env:
+          VPS_PASS: ${{ github.event.inputs.vps_password || 'pochi@333' }}
+        run: |
+          echo "=== [5/6] Memperbarui Info VPS ke Repositori ==="
+          cat << EOF > CURRENT_IP.txt
+          ==================================================
+                 🚀 GITHUB ACTIONS CLOUD VPS AKTIF 🚀
+          ==================================================
+          IP Tailscale      : $TAILSCALE_IP
+          Hostname Tailnet  : gh-vps-${GITHUB_RUN_ID}
+          Port SSH          : 22 / 2222
+          Port Web Terminal : 7681 (Buka di browser)
+          Port noVNC Web GUI: 6080 (Buka di browser)
+          Port RDP (xrdp)   : 3389
+          User              : vps (dan root)
+          Password          : ${VPS_PASS}
+          --------------------------------------------------
+          CARA AKSES:
+          1. SSH Langsung (Terminal):
+             ssh vps@$TAILSCALE_IP
+             (atau: tailscale ssh vps@gh-vps-${GITHUB_RUN_ID})
+
+          2. Web Terminal (Browser Tanpa Install):
+             http://$TAILSCALE_IP:7681
+
+          3. Web Desktop (noVNC Browser Bebas Black Screen):
+             http://$TAILSCALE_IP:6080/vnc.html
+
+          4. RDP Native (mstsc / 0X1 Desktop):
+             Host: $TAILSCALE_IP:3389
+             User: vps | Pass: ${VPS_PASS}
+          ==================================================
+          EOF
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add CURRENT_IP.txt
+          git commit -m "chore: Update Cloud VPS Access Info [Run $GITHUB_RUN_ID]" || true
+          git push origin main || true
+
+      - name: 7. Info Akses & Loop VPS Tetap Hidup (Keep-Alive)
+        env:
+          VPS_PASS: ${{ github.event.inputs.vps_password || 'pochi@333' }}
+        run: |
+          echo ""
+          echo "=========================================================="
+          echo "         🎉 GITHUB ACTIONS CLOUD VPS ONLINE 🎉            "
+          echo "=========================================================="
+          echo "  IP Tailscale        : $TAILSCALE_IP"
+          echo "  SSH Port            : 22 & 2222"
+          echo "  SSH Login           : ssh vps@$TAILSCALE_IP"
+          echo "  Root Login          : ssh root@$TAILSCALE_IP"
+          echo "  Web Terminal        : http://$TAILSCALE_IP:7681"
+          echo "  Web GUI (noVNC)     : http://$TAILSCALE_IP:6080/vnc.html"
+          echo "  RDP Port            : 3389"
+          echo "  User / Pass         : vps / ${VPS_PASS}"
+          echo "  AI Agents Ready     : OpenCode CLI & 9Router"
+          echo "=========================================================="
+          echo ""
+
+          START_TIME=$(date +%s)
+          while true; do
+            CURRENT_TIME=$(date +%s)
+            ELAPSED=$(( (CURRENT_TIME - START_TIME) / 60 ))
+            REMAINING=$(( 350 - ELAPSED ))
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] VPS Running... Elapsed: ${ELAPSED}m / Max: 350m (Sisa: ${REMAINING}m) | IP: $TAILSCALE_IP"
+            
+            # Cek status service penting
+            if ! pgrep -x sshd > /dev/null; then sudo service ssh restart; fi
+            if ! pgrep -x ttyd > /dev/null; then nohup sudo -u vps ttyd -p 7681 -c vps:${VPS_PASS} bash > /dev/null 2>&1 & fi
+            
+            sleep 60
+          done
