@@ -125,8 +125,7 @@ jobs:
                 firefox-esr \
                 nodejs \
                 npm && \
-              apt-get remove --purge -y light-locker xscreensaver xfce4-screensaver xfce4-power-manager 2>/dev/null || true && \
-              gdk-pixbuf-query-loaders --update-cache && \
+              chmod -x /usr/bin/xfce4-screensaver /usr/bin/light-locker /usr/bin/xscreensaver /usr/bin/xfce4-power-manager 2>/dev/null || true && \
               apt-get clean && \
               rm -rf /var/lib/apt/lists/*
 
