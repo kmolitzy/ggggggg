@@ -1,26 +1,25 @@
 ==================================================
        🐉 KALI LINUX OFFICIAL XFCE RDP AKTIF 🐉
 ==================================================
-IP Tailscale      : 100.113.208.66
-Hostname Tailnet  : kali-runner-37175378711
+IP Tailscale      : 100.109.5.60
+Hostname Tailnet  : kali-runner-37175860690
 Port RDP          : 3389 (mstsc / 0X1 Desktop)
-Port noVNC Web    : 6080 (Buka di browser)
 OS                : Kali Linux Official (Rolling)
 Desktop           : XFCE Official (ORI)
 User              : kali
 Password          : pochi@333
+Driver            : Native xorgxrdp (Anti-Black-Screen)
 --------------------------------------------------
 FITUR SIAP PAKAI:
 ✅ OpenCode CLI (AI Coding Agent)
 ✅ 9Router (AI Gateway Router)
-✅ Anti-Black-Screen (DPMS & Screensaver Purged)
+✅ Native xorgxrdp (Bebas VNC proxy & Bebas Black Screen)
+✅ 2GB Shared Memory (Anti crash saat render layar)
 ✅ Desktop Shortcuts Ready di Layar
 --------------------------------------------------
 CARA AKSES:
-1. RDP Native (mstsc / 0X1 Desktop):
-   Host: 100.113.208.66:3389
-   User: kali | Pass: pochi@333
-
-2. Web Desktop Browser (noVNC Tanpa Black Screen):
-   http://100.113.208.66:6080/vnc.html
+1. Buka Remote Desktop Connection (mstsc) atau 0X1 Desktop
+2. Masukkan Computer: 100.109.5.60
+3. Masukkan User    : kali
+4. Masukkan Password: pochi@333
 ==================================================
