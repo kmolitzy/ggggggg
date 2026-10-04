@@ -55,14 +55,7 @@ jobs:
           s = re.sub(r'max_bpp=.*', 'max_bpp=24', s)
           s = re.sub(r'xserverbpp=.*', 'xserverbpp=24', s)
           
-          vnc_entry = """[KaliLinux]
-name=KaliLinux
-lib=libvnc.so
-ip=127.0.0.1
-port=5901
-username=na
-password=
-"""
+          vnc_entry = "[KaliLinux]\\nname=KaliLinux\\nlib=libvnc.so\\nip=127.0.0.1\\nport=5901\\nusername=na\\npassword=\\n"
           s = re.sub(r'\[Xorg\]', vnc_entry + '\n[Xorg]', s)
           p.write_text(s)
           PY
