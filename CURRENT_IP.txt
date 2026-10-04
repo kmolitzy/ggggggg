@@ -1,8 +1,8 @@
 ==================================================
        🚀 GITHUB ACTIONS CLOUD VPS AKTIF 🚀
 ==================================================
-IP Tailscale      : 100.100.21.118
-Hostname Tailnet  : gh-vps-37178698253
+IP Tailscale      : 100.102.216.125
+Hostname Tailnet  : gh-vps-37198226489
 Port SSH          : 22 / 2222
 Port Web Terminal : 7681 (Buka di browser)
 Port noVNC Web GUI: 6080 (Buka di browser)
@@ -12,16 +12,16 @@ Password          : pochi@333
 --------------------------------------------------
 CARA AKSES:
 1. SSH Langsung (Terminal):
-   ssh vps@100.100.21.118
-   (atau: tailscale ssh vps@gh-vps-37178698253)
+   ssh vps@100.102.216.125
+   (atau: tailscale ssh vps@gh-vps-37198226489)
 
 2. Web Terminal (Browser Tanpa Install):
-   http://100.100.21.118:7681
+   http://100.102.216.125:7681
 
 3. Web Desktop (noVNC Browser Bebas Black Screen):
-   http://100.100.21.118:6080/vnc.html
+   http://100.102.216.125:6080/vnc.html
 
 4. RDP Native (mstsc / 0X1 Desktop):
-   Host: 100.100.21.118:3389
+   Host: 100.102.216.125:3389
    User: vps | Pass: pochi@333
 ==================================================
