@@ -15,59 +15,49 @@ jobs:
       - name: 1. Checkout Repository
         uses: actions/checkout@v4
 
-      - name: 2. Hubungkan Tailscale & Laporkan IP ke Repositori
+      - name: 2. Hubungkan Tailscale di Host
         run: |
+          echo "=== Memasang Tailscale ==="
           curl -fsSL https://tailscale.com/install.sh | sudo sh
-          sudo tailscale up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=kali-runner-${{ github.run_id }}
+          sudo tailscale up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=kali-runner-${{ github.run_id }} --accept-routes
           
           TS_IP=""
-          for i in {1..15}; do
+          for i in {1..20}; do
             TS_IP=$(tailscale ip -4 2>/dev/null || true)
             if [ -n "$TS_IP" ]; then break; fi
             sleep 2
           done
           
           if [ -z "$TS_IP" ]; then
-            echo "Gagal mendapatkan IP Tailscale" && exit 1
+            echo "::error::Gagal mendapatkan IP Tailscale" && exit 1
           fi
           echo "TAILSCALE_IP=$TS_IP" >> $GITHUB_ENV
-          echo "Tailscale IP: $TS_IP"
+          echo "Tailscale IP Aktif: $TS_IP"
 
-          # Tulis IP ke CURRENT_IP.txt dan push otomatis ke GitHub
-          git config user.name "0X1-Bot"
-          git config user.email "bot@0x1.cloud"
-          echo "IP Tailscale: $TS_IP" > CURRENT_IP.txt
-          echo "Runner: kali-runner-${{ github.run_id }}" >> CURRENT_IP.txt
-          echo "Port: 3389" >> CURRENT_IP.txt
-          echo "Username: kali" >> CURRENT_IP.txt
-          echo "Password: pochi@333" >> CURRENT_IP.txt
-          echo "Desktop: XFCE Official (ORI)" >> CURRENT_IP.txt
-          git add CURRENT_IP.txt
-          git commit -m "Auto-report Kali Linux IP: $TS_IP [skip ci]" || true
-          git remote set-url origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/kmolitzy/ggggggg.git"
-          git push origin main || true
-
-      - name: 3. Pasang & Konfigurasi xrdp Gateway (Auto-Login Mulus Tanpa Error VNC)
+      - name: 3. Pasang & Konfigurasi xrdp Gateway (Anti-Black-Screen)
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq xrdp netcat-openbsd
 
+          # Konfigurasi xrdp auto-login ke VNC port 5901 dengan bpp 24bit yang stabil
           sudo python3 - <<'PY'
           from pathlib import Path
           import re
           p = Path('/etc/xrdp/xrdp.ini')
           s = p.read_text()
-          s = re.sub(r'#?\s*autorun=.*', 'autorun=KaliLinux', s)
-          s = re.sub(r'#?\s*hidelogwindow=.*', 'hidelogwindow=yes', s)
+          s = re.sub(r'autorun=.*', 'autorun=KaliLinux', s)
+          s = re.sub(r'hidelogwindow=.*', 'hidelogwindow=yes', s)
+          s = re.sub(r'max_bpp=.*', 'max_bpp=24', s)
+          s = re.sub(r'xserverbpp=.*', 'xserverbpp=24', s)
           
           vnc_entry = """[KaliLinux]
-          name=KaliLinux
-          lib=libvnc.so
-          ip=127.0.0.1
-          port=5901
-          username=na
-          password=
-          """
+name=KaliLinux
+lib=libvnc.so
+ip=127.0.0.1
+port=5901
+username=na
+password=
+"""
           s = re.sub(r'\[Xorg\]', vnc_entry + '\n[Xorg]', s)
           p.write_text(s)
           PY
@@ -80,72 +70,17 @@ jobs:
           #!/bin/bash
           set -e
 
-          # 1. Pastikan direktori X11 & D-Bus siap
           mkdir -p /tmp/.X11-unix /var/run/dbus
           chmod 1777 /tmp/.X11-unix
           dbus-uuidgen --ensure=/etc/machine-id 2>/dev/null || true
           dbus-daemon --system --fork 2>/dev/null || true
 
-          # 2. Setup Shortcuts Desktop
-          mkdir -p /home/kali/Desktop
-
-          cat <<'DESK' > /home/kali/Desktop/opencode.desktop
-          [Desktop Entry]
-          Version=1.0
-          Type=Application
-          Name=OpenCode AI Agent
-          Comment=Terminal-native AI Coding Agent
-          Exec=xfce4-terminal --title="OpenCode AI Agent" --command="bash -c 'echo \"=== OpenCode AI Agent ===\"; opencode; exec bash'"
-          Icon=utilities-terminal
-          Path=/home/kali
-          Terminal=false
-          Categories=Development;Utility;
-          DESK
-
-          cat <<'DESK' > /home/kali/Desktop/9router.desktop
-          [Desktop Entry]
-          Version=1.0
-          Type=Application
-          Name=9Router AI Gateway
-          Comment=Open-source AI Router & Proxy for 60+ AI Providers
-          Exec=xfce4-terminal --title="9Router AI Server" --command="bash -c 'echo \"=== 9Router Server ===\"; 9router; exec bash'"
-          Icon=network-wired
-          Path=/home/kali
-          Terminal=false
-          Categories=Network;Development;
-          DESK
-
-          cat <<'DESK' > /home/kali/Desktop/kali-terminal.desktop
-          [Desktop Entry]
-          Version=1.0
-          Type=Application
-          Name=Kali Terminal
-          Comment=Terminal resmi Kali Linux
-          Exec=xfce4-terminal
-          Icon=utilities-terminal
-          Path=/home/kali
-          Terminal=false
-          Categories=System;
-          DESK
-
-          cat <<'DESK' > /home/kali/Desktop/firefox.desktop
-          [Desktop Entry]
-          Version=1.0
-          Type=Application
-          Name=Firefox ESR
-          Comment=Web Browser
-          Exec=firefox-esr
-          Icon=firefox-esr
-          Path=/home/kali
-          Terminal=false
-          Categories=Network;
-          DESK
-
-          chmod +x /home/kali/Desktop/*.desktop
-          chown -R kali:kali /home/kali
-
-          # 3. Jalankan TigerVNC dengan flag -ac (Disable Access Control agar koneksi X11 100% diterima)
-          su - kali -c "Xvnc :1 -geometry 1280x720 -depth 24 -rfbport 5901 -SecurityTypes None,TLSNone -ac -pn" > /home/kali/xvnc.log 2>&1 &
+          # 1. Jalankan Display Server TigerVNC di Port 5901
+          # Flag krusial:
+          # -ac        : Matikan access control agar tidak rejected oleh X11 auth
+          # -pn        : Izinkan koneksi network lokal
+          # -dpms -s 0 : Matikan sleep/blanking display (PENYEBAB UTAMA BLACK SCREEN)
+          su - kali -c "Xvnc :1 -geometry 1280x720 -depth 24 -rfbport 5901 -SecurityTypes None,TLSNone -ac -pn -dpms -s 0" > /home/kali/xvnc.log 2>&1 &
 
           # Tunggu socket display :1 siap
           for i in {1..30}; do
@@ -156,56 +91,62 @@ jobs:
             sleep 0.5
           done
 
-          # 4. Set background solid agar layar langsung berwarna gelap (bukan hitam kosong)
-          su - kali -c "DISPLAY=:1 xsetroot -solid '#1a1b26' 2>/dev/null || true"
+          # 2. Cat background dengan warna gelap solid agar layar tidak pernah hitam kosong
+          xset -display :1 s off 2>/dev/null || true
+          xset -display :1 -dpms 2>/dev/null || true
+          xset -display :1 s noblank 2>/dev/null || true
+          xsetroot -display :1 -solid "#1e1e2e" 2>/dev/null || true
 
-          # 5. Jalankan Sesi Desktop Resmi Kali Linux XFCE Bawaan
+          # 3. Jalankan noVNC Web (Port 6080) sebagai alternatif Web Desktop (Bebas Black Screen via Browser)
+          websockify --web /usr/share/novnc/ 6080 localhost:5901 > /home/kali/novnc.log 2>&1 &
+
+          # 4. Jalankan Sesi Desktop Resmi Kali Linux (XFCE) secara langsung dan mandiri
           su - kali -c "
             export DISPLAY=:1
             export XDG_CURRENT_DESKTOP=XFCE
-            export XDG_SESSION_TYPE=x11
             export DESKTOP_SESSION=xfce
             export LIBGL_ALWAYS_SOFTWARE=1
             export GDK_BACKEND=x11
+            
+            eval \$(dbus-launch --sh-syntax)
+            export DBUS_SESSION_BUS_ADDRESS
 
-            if command -v dbus-run-session >/dev/null 2>&1; then
-              dbus-run-session startxfce4
-            else
-              startxfce4
-            fi
-          " > /home/kali/desktop.log 2>&1 &
+            # Jalankan komponen inti XFCE
+            xfsettingsd &
+            xfwm4 --compositor=off &
+            xfce4-panel &
+            xfdesktop &
+          " > /home/kali/xfce.log 2>&1 &
 
-          # 6. Supervisor jaminan: jika ada komponen XFCE yang belum hidup, paksa hidupkan!
+          # 5. Background Supervisor: Terapkan Tema Resmi Kali-Dark & Pastikan Komponen GUI Tetap Aktif
           (
             sleep 4
-            if ! pgrep -x "xfwm4" >/dev/null; then
-              su - kali -c "DISPLAY=:1 LIBGL_ALWAYS_SOFTWARE=1 xfwm4 --compositor=off &"
-            fi
-            if ! pgrep -x "xfce4-panel" >/dev/null; then
-              su - kali -c "DISPLAY=:1 LIBGL_ALWAYS_SOFTWARE=1 xfce4-panel &"
-            fi
-            if ! pgrep -x "xfdesktop" >/dev/null; then
-              su - kali -c "DISPLAY=:1 LIBGL_ALWAYS_SOFTWARE=1 xfdesktop &"
-            fi
-
-            # Terapkan tema resmi Kali-Dark dan wallpaper resmi Kali
             su - kali -c "
               export DISPLAY=:1
               xfconf-query -c xsettings -p /Net/ThemeName -s 'Kali-Dark' --create -t string 2>/dev/null || true
               xfconf-query -c xsettings -p /Net/IconThemeName -s 'Flat-Remix-Blue-Dark' --create -t string 2>/dev/null || true
               xfconf-query -c xfwm4 -p /general/theme -s 'Kali-Dark' --create -t string 2>/dev/null || true
               xfconf-query -c xfwm4 -p /general/use_compositing -s 'false' --create -t bool 2>/dev/null || true
-              
-              KALI_WP=\$(find /usr/share/backgrounds /usr/share/wallpapers -type f \( -name '*.png' -o -name '*.jpg' \) 2>/dev/null | grep -i kali | head -n 1)
-              if [ -n \"\$KALI_WP\" ]; then
-                xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitor0/workspace0/last-image -s \"\$KALI_WP\" --create -t string 2>/dev/null || true
-                xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitorVNC-0/workspace0/last-image -s \"\$KALI_WP\" --create -t string 2>/dev/null || true
-              fi
+              xset s off -dpms s noblank 2>/dev/null || true
             " 2>/dev/null || true
+
+            # Loop pemantau: Jika xfwm4, xfce4-panel, atau xfdesktop mati, hidupkan kembali otomatis
+            while true; do
+              sleep 8
+              if ! pgrep -u kali xfwm4 >/dev/null 2>&1; then
+                su - kali -c "DISPLAY=:1 xfwm4 --compositor=off &" 2>/dev/null || true
+              fi
+              if ! pgrep -u kali xfce4-panel >/dev/null 2>&1; then
+                su - kali -c "DISPLAY=:1 xfce4-panel &" 2>/dev/null || true
+              fi
+              if ! pgrep -u kali xfdesktop >/dev/null 2>&1; then
+                su - kali -c "DISPLAY=:1 xfdesktop &" 2>/dev/null || true
+              fi
+            done
           ) &
 
-          sleep 2
-          exec tail -f /home/kali/xvnc.log /home/kali/desktop.log
+          sleep 3
+          exec tail -f /home/kali/xvnc.log /home/kali/xfce.log
           EOF
           chmod +x entrypoint.sh
 
@@ -214,26 +155,27 @@ jobs:
 
           ENV DEBIAN_FRONTEND=noninteractive
 
-          # Pasang XFCE, X11 tools, TigerVNC, terminal, tema resmi Kali Linux & tools
+          # Pasang XFCE Resmi, TigerVNC, Tools Kali, OpenCode, Node.js & 9Router
           RUN apt-get update && \
               apt-get install -y --no-install-recommends \
-                xorg \
-                xinit \
-                xauth \
-                x11-xserver-utils \
                 xfce4 \
-                xfce4-goodies \
-                xfce4-session \
+                xfce4-terminal \
                 xfce4-panel \
                 xfdesktop4 \
                 xfwm4 \
-                xfce4-terminal \
+                xfce4-settings \
                 thunar \
                 tigervnc-standalone-server \
+                novnc \
+                websockify \
                 dbus-x11 \
+                x11-xserver-utils \
+                x11-utils \
+                xorg \
+                xinit \
+                xauth \
                 kali-themes \
-                kali-menu \
-                kali-undercover \
+                kali-defaults \
                 curl \
                 wget \
                 sudo \
@@ -244,26 +186,37 @@ jobs:
                 fonts-dejavu-core \
                 fonts-noto-core \
                 nmap \
-                git \
-                nodejs \
-                npm \
                 firefox-esr && \
+              apt-get remove --purge -y light-locker xscreensaver xfce4-screensaver xfce4-power-manager 2>/dev/null || true && \
               apt-get clean && \
               rm -rf /var/lib/apt/lists/*
-
-          # Pasang OpenCode AI Coding Agent (CLI)
-          RUN curl -fsSL "https://github.com/anomalyco/opencode/releases/latest/download/opencode-linux-x64.tar.gz" | tar -xz -C /usr/local/bin && \
-              chmod +x /usr/local/bin/opencode && \
-              opencode --version || true
-
-          # Pasang 9Router (AI Router Gateway) via npm
-          RUN npm install -g 9router && \
-              which 9router || true
 
           # Buat user kali resmi dengan hak sudo penuh
           RUN useradd -m -s /bin/bash -u 1000 kali && \
               echo "kali:pochi@333" | chpasswd && \
-              echo "kali ALL=(ALL) ALL" >> /etc/sudoers
+              echo "kali ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+          # Pasang OpenCode CLI (AI Coding Agent)
+          RUN curl -fsSL https://github.com/anomalyco/opencode/releases/latest/download/opencode-linux-x64.tar.gz | tar -xz -C /usr/local/bin && \
+              chmod +x /usr/local/bin/opencode
+
+          # Pasang Node.js & 9Router Gateway
+          RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+              apt-get install -y nodejs && \
+              npm install -g 9router && \
+              apt-get clean && \
+              rm -rf /var/lib/apt/lists/*
+
+          # Buat Desktop Shortcuts di Desktop Kali Linux & pastikan izin direktori bebas permission denied
+          RUN mkdir -p /home/kali/Desktop && \
+              echo '[Desktop Entry]\nVersion=1.0\nType=Application\nName=OpenCode Agent\nComment=Terminal AI Coding Agent\nExec=xfce4-terminal -T "OpenCode AI Agent" -e "opencode"\nIcon=utilities-terminal\nTerminal=false\nCategories=Development;' > /home/kali/Desktop/OpenCode.desktop && \
+              echo '[Desktop Entry]\nVersion=1.0\nType=Application\nName=9Router Gateway\nComment=AI Gateway for LLMs\nExec=xfce4-terminal -T "9Router Gateway" -e "9router"\nIcon=network-wired\nTerminal=false\nCategories=Network;' > /home/kali/Desktop/9Router.desktop && \
+              echo '[Desktop Entry]\nVersion=1.0\nType=Application\nName=Kali Terminal\nExec=xfce4-terminal\nIcon=utilities-terminal\nTerminal=false;' > /home/kali/Desktop/Terminal.desktop && \
+              echo '[Desktop Entry]\nVersion=1.0\nType=Application\nName=Firefox ESR\nExec=firefox-esr\nIcon=firefox-esr\nTerminal=false;' > /home/kali/Desktop/Firefox.desktop && \
+              chmod +x /home/kali/Desktop/*.desktop && \
+              mkdir -p /home/kali/.config/opencode && \
+              chmod -R 777 /home/kali/.config && \
+              chown -R kali:kali /home/kali
 
           COPY entrypoint.sh /entrypoint.sh
           ENTRYPOINT ["/entrypoint.sh"]
@@ -282,25 +235,62 @@ jobs:
             sleep 1
           done
 
-          # Cek status container & log
+          # Cek status container
           docker ps
           docker logs kali-desktop || true
 
-      - name: 5. Informasi Akses
+      - name: 5. Lapor IP & Detail Akses Kali ke Repositori
+        run: |
+          cat << EOF > CURRENT_IP.txt
+          ==================================================
+                 🐉 KALI LINUX OFFICIAL XFCE RDP AKTIF 🐉
+          ==================================================
+          IP Tailscale      : $TAILSCALE_IP
+          Hostname Tailnet  : kali-runner-${{ github.run_id }}
+          Port RDP          : 3389 (mstsc / 0X1 Desktop)
+          Port noVNC Web    : 6080 (Buka di browser)
+          OS                : Kali Linux Official (Rolling)
+          Desktop           : XFCE Official (ORI)
+          User              : kali
+          Password          : pochi@333
+          --------------------------------------------------
+          FITUR SIAP PAKAI:
+          ✅ OpenCode CLI (AI Coding Agent)
+          ✅ 9Router (AI Gateway Router)
+          ✅ Anti-Black-Screen (DPMS & Screensaver Purged)
+          ✅ Desktop Shortcuts Ready di Layar
+          --------------------------------------------------
+          CARA AKSES:
+          1. RDP Native (mstsc / 0X1 Desktop):
+             Host: $TAILSCALE_IP:3389
+             User: kali | Pass: pochi@333
+
+          2. Web Desktop Browser (noVNC Tanpa Black Screen):
+             http://$TAILSCALE_IP:6080/vnc.html
+          ==================================================
+          EOF
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add CURRENT_IP.txt
+          git commit -m "chore: Update Kali Linux Official RDP Info [Run ${{ github.run_id }}]" || true
+          git push origin main || true
+
+      - name: 6. Informasi Akses & Loop Aktif (6 Jam)
         run: |
           echo "=========================================="
-          echo "  KALI LINUX RESMI (XFCE ORI) SUDAH AKTIF "
+          echo "    KALI LINUX OFFICIAL XFCE RDP AKTIF    "
           echo "=========================================="
-          echo "IP Tailscale : $TAILSCALE_IP"
-          echo "Port         : 3389"
-          echo "OS           : Kali Linux (Rolling Release Terbaru)"
-          echo "Desktop      : XFCE Official (Original Kali Theme & Dragon Wallpaper)"
-          echo "AI Tools     : OpenCode CLI & 9Router Gateway Terpasang"
-          echo "User         : kali"
-          echo "Password     : pochi@333"
+          echo "IP Tailscale  : $TAILSCALE_IP"
+          echo "Port RDP      : 3389"
+          echo "Port noVNC    : 6080 (http://$TAILSCALE_IP:6080/vnc.html)"
+          echo "OS            : Kali Linux Official"
+          echo "Desktop       : XFCE Official (ORI)"
+          echo "User          : kali"
+          echo "Password      : pochi@333"
           echo "=========================================="
 
           while true; do
-            echo "[$(date '+%H:%M:%S')] Kali Linux Official XFCE Active at IP $TAILSCALE_IP..."
+            echo "[$(date '+%H:%M:%S')] Kali Linux Official XFCE Active..."
             sleep 60
           done
