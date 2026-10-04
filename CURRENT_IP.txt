@@ -1,27 +1,21 @@
 ==================================================
-       🚀 GITHUB ACTIONS CLOUD VPS AKTIF 🚀
+    🎮 GITHUB ACTIONS WINDOWS GAMING RDP AKTIF 🎮
 ==================================================
-IP Tailscale      : 100.88.179.106
-Hostname Tailnet  : gh-vps-37171148432
-Port SSH          : 22 / 2222
-Port Web Terminal : 7681 (Buka di browser)
-Port noVNC Web GUI: 6080 (Buka di browser)
-Port RDP (xrdp)   : 3389
-User              : vps (dan root)
-Password          : pochi@333
+IP Tailscale : 100.75.63.113
+Port RDP     : 3389
+Username     : poiXd
+Password     : pochi@333
+--------------------------------------------------
+FITUR GAMING AKTIF:
+✅ Minetest (Voxel Sandbox Mirip Minecraft) Ready!
+✅ Steam Installer Ready di Desktop
+✅ DirectPlay & Visual C++ 2005-2022 Terpasang
+✅ Audio RDP Aktif (Bisa dengar suara game)
+✅ Cloud Gaming Ready (GeForce NOW & Xbox Cloud)
 --------------------------------------------------
 CARA AKSES:
-1. SSH Langsung (Terminal):
-   ssh vps@100.88.179.106
-   (atau: tailscale ssh vps@gh-vps-37171148432)
-
-2. Web Terminal (Browser Tanpa Install):
-   http://100.88.179.106:7681
-
-3. Web Desktop (noVNC Browser Bebas Black Screen):
-   http://100.88.179.106:6080/vnc.html
-
-4. RDP Native (mstsc / 0X1 Desktop):
-   Host: 100.88.179.106:3389
-   User: vps | Pass: pochi@333
+1. Buka Remote Desktop Connection (mstsc) atau 0X1 Desktop
+2. Masukkan Computer: 100.75.63.113
+3. Masukkan User: poiXd
+4. Masukkan Password: pochi@333
 ==================================================
