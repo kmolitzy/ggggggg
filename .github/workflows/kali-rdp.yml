@@ -47,7 +47,7 @@ jobs:
           git remote set-url origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/kmolitzy/ggggggg.git"
           git push origin main || true
 
-      - name: 3. Pasang & Konfigurasi xrdp Gateway (Pure Auto-Login Tanpa Dialog)
+      - name: 3. Pasang & Konfigurasi xrdp Gateway (Auto-Login Mulus Tanpa Error VNC)
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq xrdp netcat-openbsd
@@ -81,11 +81,12 @@ jobs:
           set -e
 
           # 1. Pastikan direktori X11 & D-Bus siap
-          mkdir -p /tmp/.X11-unix
+          mkdir -p /tmp/.X11-unix /var/run/dbus
           chmod 1777 /tmp/.X11-unix
           dbus-uuidgen --ensure=/etc/machine-id 2>/dev/null || true
+          dbus-daemon --system --fork 2>/dev/null || true
 
-          # 2. Buat Shortcut Desktop untuk OpenCode & 9Router
+          # 2. Setup Shortcuts Desktop
           mkdir -p /home/kali/Desktop
 
           cat <<'DESK' > /home/kali/Desktop/opencode.desktop
@@ -143,8 +144,8 @@ jobs:
           chmod +x /home/kali/Desktop/*.desktop
           chown -R kali:kali /home/kali
 
-          # 3. Jalankan Display Server TigerVNC di Port 5901 (SecurityTypes None,TLSNone)
-          su - kali -c "Xvnc :1 -geometry 1366x768 -depth 24 -rfbport 5901 -SecurityTypes None,TLSNone -pn" > /home/kali/xvnc.log 2>&1 &
+          # 3. Jalankan TigerVNC dengan flag -ac (Disable Access Control agar koneksi X11 100% diterima)
+          su - kali -c "Xvnc :1 -geometry 1280x720 -depth 24 -rfbport 5901 -SecurityTypes None,TLSNone -ac -pn" > /home/kali/xvnc.log 2>&1 &
 
           # Tunggu socket display :1 siap
           for i in {1..30}; do
@@ -155,35 +156,39 @@ jobs:
             sleep 0.5
           done
 
-          # 4. Set root background solid agar tidak ada layar hitam
-          export DISPLAY=:1
-          xsetroot -solid "#1a1b26" 2>/dev/null || true
+          # 4. Set background solid agar layar langsung berwarna gelap (bukan hitam kosong)
+          su - kali -c "DISPLAY=:1 xsetroot -solid '#1a1b26' 2>/dev/null || true"
 
-          # 5. Jalankan Sesi Desktop Resmi Kali Linux (XFCE4 Official Session)
+          # 5. Jalankan Sesi Desktop Resmi Kali Linux XFCE Bawaan
           su - kali -c "
             export DISPLAY=:1
             export XDG_CURRENT_DESKTOP=XFCE
-            export DESKTOP_SESSION=xfce
             export XDG_SESSION_TYPE=x11
+            export DESKTOP_SESSION=xfce
             export LIBGL_ALWAYS_SOFTWARE=1
             export GDK_BACKEND=x11
 
-            if command -v xfce4-session >/dev/null 2>&1; then
-              dbus-run-session xfce4-session
+            if command -v dbus-run-session >/dev/null 2>&1; then
+              dbus-run-session startxfce4
             else
-              dbus-run-session bash -c '
-                xfsettingsd &
-                xfwm4 --compositor=off &
-                xfce4-panel &
-                xfdesktop &
-                wait
-              '
+              startxfce4
             fi
           " > /home/kali/desktop.log 2>&1 &
 
-          # 6. Terapkan tema resmi Kali-Dark dan wallpaper resmi Kali
+          # 6. Supervisor jaminan: jika ada komponen XFCE yang belum hidup, paksa hidupkan!
           (
             sleep 4
+            if ! pgrep -x "xfwm4" >/dev/null; then
+              su - kali -c "DISPLAY=:1 LIBGL_ALWAYS_SOFTWARE=1 xfwm4 --compositor=off &"
+            fi
+            if ! pgrep -x "xfce4-panel" >/dev/null; then
+              su - kali -c "DISPLAY=:1 LIBGL_ALWAYS_SOFTWARE=1 xfce4-panel &"
+            fi
+            if ! pgrep -x "xfdesktop" >/dev/null; then
+              su - kali -c "DISPLAY=:1 LIBGL_ALWAYS_SOFTWARE=1 xfdesktop &"
+            fi
+
+            # Terapkan tema resmi Kali-Dark dan wallpaper resmi Kali
             su - kali -c "
               export DISPLAY=:1
               xfconf-query -c xsettings -p /Net/ThemeName -s 'Kali-Dark' --create -t string 2>/dev/null || true
@@ -209,9 +214,13 @@ jobs:
 
           ENV DEBIAN_FRONTEND=noninteractive
 
-          # 1. Update repositori resmi Kali Linux & Pasang Desktop Asli Kali (XFCE Official Lengkap) + Tools
+          # Pasang XFCE, X11 tools, TigerVNC, terminal, tema resmi Kali Linux & tools
           RUN apt-get update && \
               apt-get install -y --no-install-recommends \
+                xorg \
+                xinit \
+                xauth \
+                x11-xserver-utils \
                 xfce4 \
                 xfce4-goodies \
                 xfce4-session \
@@ -222,7 +231,6 @@ jobs:
                 thunar \
                 tigervnc-standalone-server \
                 dbus-x11 \
-                x11-xserver-utils \
                 kali-themes \
                 kali-menu \
                 kali-undercover \
@@ -243,16 +251,16 @@ jobs:
               apt-get clean && \
               rm -rf /var/lib/apt/lists/*
 
-          # 2. Pasang OpenCode AI Coding Agent (CLI resmi terbaru)
+          # Pasang OpenCode AI Coding Agent (CLI)
           RUN curl -fsSL "https://github.com/anomalyco/opencode/releases/latest/download/opencode-linux-x64.tar.gz" | tar -xz -C /usr/local/bin && \
               chmod +x /usr/local/bin/opencode && \
               opencode --version || true
 
-          # 3. Pasang 9Router (AI Router Gateway untuk 60+ Provider) via npm
+          # Pasang 9Router (AI Router Gateway) via npm
           RUN npm install -g 9router && \
               which 9router || true
 
-          # 4. Buat user kali resmi dengan hak sudo penuh
+          # Buat user kali resmi dengan hak sudo penuh
           RUN useradd -m -s /bin/bash -u 1000 kali && \
               echo "kali:pochi@333" | chpasswd && \
               echo "kali ALL=(ALL) ALL" >> /etc/sudoers
@@ -274,7 +282,7 @@ jobs:
             sleep 1
           done
 
-          # Cek status container
+          # Cek status container & log
           docker ps
           docker logs kali-desktop || true
 
@@ -293,6 +301,6 @@ jobs:
           echo "=========================================="
 
           while true; do
-            echo "[$(date '+%H:%M:%S')] Kali Linux Official XFCE Active..."
+            echo "[$(date '+%H:%M:%S')] Kali Linux Official XFCE Active at IP $TAILSCALE_IP..."
             sleep 60
           done
