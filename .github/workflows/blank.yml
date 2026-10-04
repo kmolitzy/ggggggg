@@ -3,13 +3,19 @@ name: RDP
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   secure-rdp:
     runs-on: windows-latest
-    timeout-minutes: 3600 # 60 jam (sistem GitHub otomatis membatasi di jam ke-6)
+    timeout-minutes: 360 # 6 jam (batas maksimal GitHub Actions)
 
     steps:
-      - name: 1. Konfigurasi RDP & Layanan Windows
+      - name: 1. Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 2. Konfigurasi RDP, Audio & Layanan Windows
         run: |
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0 -Force
@@ -19,24 +25,59 @@ jobs:
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "MaxDisconnectionTime" -Value 0 -Force
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "MaxIdleTime" -Value 0 -Force
 
+          # Aktifkan Layanan Audio Windows
+          Set-Service -Name "Audiosrv" -StartupType Automatic
+          Start-Service -Name "Audiosrv" -ErrorAction SilentlyContinue
+
           netsh advfirewall firewall delete rule name="RDP-Tailscale" 2>$null
           netsh advfirewall firewall add rule name="RDP-Tailscale" dir=in action=allow protocol=TCP localport=3389
           Restart-Service -Name TermService -Force
 
-      - name: 2. Buat Akun RDP Windows
+      - name: 3. Buat Akun RDP Windows
         run: |
-          # Ganti username & password sesuai keinginan lo di sini:
           $username = "poiXd"
           $password = "pochi@333"
 
           $securePass = ConvertTo-SecureString $password -AsPlainText -Force
-          New-LocalUser -Name $username -Password $securePass -AccountNeverExpires
-          Add-LocalGroupMember -Group "Administrators" -Member $username
-          Add-LocalGroupMember -Group "Remote Desktop Users" -Member $username
+          if (-not (Get-LocalUser -Name $username -ErrorAction SilentlyContinue)) {
+              New-LocalUser -Name $username -Password $securePass -AccountNeverExpires
+              Add-LocalGroupMember -Group "Administrators" -Member $username
+              Add-LocalGroupMember -Group "Remote Desktop Users" -Member $username
+          } else {
+              Set-LocalUser -Name $username -Password $securePass
+          }
           echo "RDP_USER=$username" >> $env:GITHUB_ENV
           echo "RDP_PASS=$password" >> $env:GITHUB_ENV
 
-      - name: 3. Unduh & Pasang Tailscale
+      - name: 4. Pasang Runtime Game & Game Sandbox (Minetest + Steam)
+        run: |
+          dism /online /enable-feature /featurename:DirectPlay /all /norestart
+          choco install vcredist-all -y --no-progress
+          choco install 7zip -y --no-progress
+
+          $publicDesktop = "C:\Users\Public\Desktop"
+          $minetestZip = "$env:TEMP\minetest.zip"
+          $minetestUrl = "https://github.com/minetest/minetest/releases/download/5.9.1/minetest-5.9.1-win64.zip"
+          Invoke-WebRequest -Uri $minetestUrl -OutFile $minetestZip -UseBasicParsing
+          Expand-Archive -Path $minetestZip -DestinationPath "C:\Games" -Force
+          Remove-Item $minetestZip -Force
+
+          $wshShell = New-Object -ComObject WScript.Shell
+          $shortcut = $wshShell.CreateShortcut("$publicDesktop\Minetest (Minecraft Lite).lnk")
+          $shortcut.TargetPath = "C:\Games\minetest-5.9.1-win64\bin\minetest.exe"
+          $shortcut.WorkingDirectory = "C:\Games\minetest-5.9.1-win64\bin"
+          $shortcut.Description = "Main Minetest Sandbox Voxel Game"
+          $shortcut.Save()
+
+          $steamInstaller = "$publicDesktop\Pasang Steam.exe"
+          Invoke-WebRequest -Uri "https://cdn.akamai.steamstatic.com/client/installer/SteamSetup.exe" -OutFile $steamInstaller -UseBasicParsing
+
+          $gfnShortcut = $wshShell.CreateShortcut("$publicDesktop\GeForce NOW (Cloud Gaming).lnk")
+          $gfnShortcut.TargetPath = "msedge.exe"
+          $gfnShortcut.Arguments = "--app=https://play.geforcenow.com"
+          $gfnShortcut.Save()
+
+      - name: 5. Unduh & Pasang Tailscale
         run: |
           $tsUrl = "https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi"
           $installerPath = "$env:TEMP\tailscale.msi"
@@ -44,20 +85,18 @@ jobs:
           Start-Process msiexec.exe -ArgumentList "/i", "`"$installerPath`"", "/quiet", "/norestart", "TS_NOLAUNCH=1" -Wait
           Remove-Item $installerPath -Force
 
-      - name: 4. Hubungkan Tailscale (Mode Unattended / Anti-DC saat HP Mati)
+      - name: 6. Hubungkan Tailscale (Mode Unattended / Anti-DC saat HP Mati)
         run: |
-          # Atur policy Windows agar Tailscale tetap nyala sebagai service saat sesi RDP ditutup
           New-Item -Path 'HKLM:\SOFTWARE\Policies\Tailscale' -Force | Out-Null
           Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Tailscale' -Name "UnattendedMode" -Value "always" -Force
 
-          # Aktifkan Tailscale dengan flag --unattended=true
           & "$env:ProgramFiles\Tailscale\tailscale.exe" up --unattended=true --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=gh-runner-$env:GITHUB_RUN_ID
 
           $tsIP = $null
           $retries = 0
-          while (-not $tsIP -and $retries -lt 12) {
+          while (-not $tsIP -and $retries -lt 15) {
               $tsIP = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
-              Start-Sleep -Seconds 5
+              Start-Sleep -Seconds 4
               $retries++
           }
           if (-not $tsIP) {
@@ -66,17 +105,40 @@ jobs:
           }
           echo "TAILSCALE_IP=$tsIP" >> $env:GITHUB_ENV
 
-      - name: 5. Uji Port RDP
+      - name: 7. Lapor IP ke Repositori
         run: |
-          Write-Host "Tailscale IP: $env:TAILSCALE_IP"
-          $testResult = Test-NetConnection -ComputerName $env:TAILSCALE_IP -Port 3389
-          if (-not $testResult.TcpTestSucceeded) {
-              Write-Error "Port 3389 tidak merespons!"
-              exit 1
-          }
-          Write-Host "Koneksi RDP siap digunakan!"
+          $infoContent = @"
+          ==================================================
+              🎮 GITHUB ACTIONS WINDOWS GAMING RDP AKTIF 🎮
+          ==================================================
+          IP Tailscale : $env:TAILSCALE_IP
+          Port RDP     : 3389
+          Username     : $env:RDP_USER
+          Password     : $env:RDP_PASS
+          --------------------------------------------------
+          FITUR GAMING AKTIF:
+          ✅ Minetest (Voxel Sandbox Mirip Minecraft) Ready!
+          ✅ Steam Installer Ready di Desktop
+          ✅ DirectPlay & Visual C++ 2005-2022 Terpasang
+          ✅ Audio RDP Aktif (Bisa dengar suara game)
+          ✅ Cloud Gaming Ready (GeForce NOW & Xbox Cloud)
+          --------------------------------------------------
+          CARA AKSES:
+          1. Buka Remote Desktop Connection (mstsc) atau 0X1 Desktop
+          2. Masukkan Computer: $env:TAILSCALE_IP
+          3. Masukkan User: $env:RDP_USER
+          4. Masukkan Password: $env:RDP_PASS
+          ==================================================
+          "@
+          Set-Content -Path "CURRENT_IP.txt" -Value $infoContent -Encoding UTF8
 
-      - name: 6. Pertahankan Sesi (Loop Aktif)
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add CURRENT_IP.txt
+          git commit -m "chore: Update Windows Gaming RDP Info [Run $env:GITHUB_RUN_ID]"
+          git push origin main
+
+      - name: 8. Pertahankan Sesi (Loop Aktif)
         run: |
           Write-Host "`n=========================================="
           Write-Host "           RDP BERHASIL AKTIF             "

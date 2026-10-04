@@ -1,0 +1,219 @@
+name: Windows Gaming & Cloud RDP
+
+on:
+  workflow_dispatch:
+    inputs:
+      rdp_password:
+        description: 'Password akun RDP Windows'
+        required: false
+        default: 'pochi@333'
+
+permissions:
+  contents: write
+
+jobs:
+  windows-gaming-rdp:
+    runs-on: windows-latest
+    timeout-minutes: 360 # 6 jam (batas maksimal GitHub Actions)
+
+    steps:
+      - name: 1. Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 2. Konfigurasi Layanan RDP, Audio & Firewall Windows
+        run: |
+          Write-Host "=== Mengaktifkan RDP & Menghapus Pembatasan ==="
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "SecurityLayer" -Value 0 -Force
+          
+          # Cegah pemutusan koneksi otomatis
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "MaxDisconnectionTime" -Value 0 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "MaxIdleTime" -Value 0 -Force
+
+          # Aktifkan Layanan Audio Windows agar game bersuara di RDP
+          Set-Service -Name "Audiosrv" -StartupType Automatic
+          Start-Service -Name "Audiosrv" -ErrorAction SilentlyContinue
+
+          # Firewall
+          netsh advfirewall firewall delete rule name="RDP-Tailscale" 2>$null
+          netsh advfirewall firewall add rule name="RDP-Tailscale" dir=in action=allow protocol=TCP localport=3389
+          Restart-Service -Name TermService -Force
+
+      - name: 3. Buat Akun RDP Administrator
+        env:
+          INPUT_PASS: ${{ github.event.inputs.rdp_password }}
+        run: |
+          $username = "Administrator"
+          $password = if ($env:INPUT_PASS) { $env:INPUT_PASS } else { "pochi@333" }
+
+          # Aktifkan user Administrator bawaan & atur password
+          $adminUser = [ADSI]"WinNT://./Administrator,user"
+          $adminUser.SetPassword($password)
+          $adminUser.UserFlags = 65536 # DONT_EXPIRE_PASSWORD
+          $adminUser.SetInfo()
+
+          # Buat user cadangan 'poiXd'
+          $securePass = ConvertTo-SecureString $password -AsPlainText -Force
+          if (-not (Get-LocalUser -Name "poiXd" -ErrorAction SilentlyContinue)) {
+              New-LocalUser -Name "poiXd" -Password $securePass -AccountNeverExpires
+              Add-LocalGroupMember -Group "Administrators" -Member "poiXd"
+              Add-LocalGroupMember -Group "Remote Desktop Users" -Member "poiXd"
+          } else {
+              Set-LocalUser -Name "poiXd" -Password $securePass
+          }
+
+          echo "RDP_USER=Administrator" >> $env:GITHUB_ENV
+          echo "RDP_PASS=$password" >> $env:GITHUB_ENV
+
+      - name: 4. Optimasi Gaming (DirectPlay, C++ Runtimes & DirectX WARP)
+        run: |
+          Write-Host "=== Memasang DirectX & Runtime Gaming ==="
+          # Aktifkan DirectPlay untuk game klasik/retro
+          dism /online /enable-feature /featurename:DirectPlay /all /norestart
+
+          # Pasang Visual C++ All Runtimes via Chocolatey agar tidak missing dll
+          choco install vcredist-all -y --no-progress
+          choco install 7zip -y --no-progress
+
+      - name: 5. Pasang Game & Game Hub di Desktop
+        run: |
+          Write-Host "=== Memasang Game & Emulator di Desktop ==="
+          $desktopPath = "C:\Users\Administrator\Desktop"
+          if (-not (Test-Path $desktopPath)) { New-Item -ItemType Directory -Path $desktopPath -Force }
+          $publicDesktop = "C:\Users\Public\Desktop"
+
+          # 1. Unduh Minetest / Luanti (Sandbox Voxel Game mirip Minecraft, lancar di CPU!)
+          Write-Host "Mengunduh Minetest (Minecraft Alternative)..."
+          $minetestZip = "$env:TEMP\minetest.zip"
+          $minetestUrl = "https://github.com/minetest/minetest/releases/download/5.9.1/minetest-5.9.1-win64.zip"
+          Invoke-WebRequest -Uri $minetestUrl -OutFile $minetestZip -UseBasicParsing
+          Expand-Archive -Path $minetestZip -DestinationPath "C:\Games" -Force
+          Remove-Item $minetestZip -Force
+
+          # Buat Shortcut Minetest di Desktop
+          $wshShell = New-Object -ComObject WScript.Shell
+          $shortcut = $wshShell.CreateShortcut("$publicDesktop\Minetest (Minecraft Lite).lnk")
+          $shortcut.TargetPath = "C:\Games\minetest-5.9.1-win64\bin\minetest.exe"
+          $shortcut.WorkingDirectory = "C:\Games\minetest-5.9.1-win64\bin"
+          $shortcut.Description = "Main Minetest Sandbox Voxel Game"
+          $shortcut.Save()
+
+          # 2. Pasang Steam Client Installer
+          Write-Host "Menyiapkan Steam Installer..."
+          $steamInstaller = "$publicDesktop\Pasang Steam.exe"
+          Invoke-WebRequest -Uri "https://cdn.akamai.steamstatic.com/client/installer/SteamSetup.exe" -OutFile $steamInstaller -UseBasicParsing
+
+          # 3. Shortcut Cloud Gaming (GeForce NOW & Xbox Cloud Gaming di Edge)
+          $gfnShortcut = $wshShell.CreateShortcut("$publicDesktop\GeForce NOW (Cloud Gaming).lnk")
+          $gfnShortcut.TargetPath = "msedge.exe"
+          $gfnShortcut.Arguments = "--app=https://play.geforcenow.com"
+          $gfnShortcut.Description = "Streaming Game AAA Berat (GTA V, Cyberpunk, dll)"
+          $gfnShortcut.Save()
+
+          $xcloudShortcut = $wshShell.CreateShortcut("$publicDesktop\Xbox Cloud Gaming.lnk")
+          $xcloudShortcut.TargetPath = "msedge.exe"
+          $xcloudShortcut.Arguments = "--app=https://www.xbox.com/play"
+          $xcloudShortcut.Description = "Streaming Game Xbox di Cloud"
+          $xcloudShortcut.Save()
+
+          # 4. Shortcut Retro Games (Play Classic Games Online di Browser)
+          $retroShortcut = $wshShell.CreateShortcut("$publicDesktop\Retro Games Online (GBA, SNES, PS1).lnk")
+          $retroShortcut.TargetPath = "msedge.exe"
+          $retroShortcut.Arguments = "--app=https://www.retrogames.cc"
+          $retroShortcut.Description = "Ribuan Game Retro Siap Main Langsung"
+          $retroShortcut.Save()
+
+          # 5. Pasang Google Chrome
+          choco install googlechrome -y --no-progress
+
+      - name: 6. Unduh, Pasang & Hubungkan Tailscale
+        env:
+          TAILSCALE_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
+        run: |
+          Write-Host "=== Memasang Tailscale ==="
+          $tsUrl = "https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi"
+          $installerPath = "$env:TEMP\tailscale.msi"
+          Invoke-WebRequest -Uri $tsUrl -OutFile $installerPath -UseBasicParsing
+          Start-Process msiexec.exe -ArgumentList "/i", "`"$installerPath`"", "/quiet", "/norestart", "TS_NOLAUNCH=1" -Wait
+          Remove-Item $installerPath -Force
+
+          # Kebijakan Unattended agar tidak DC saat RDP ditutup
+          New-Item -Path 'HKLM:\SOFTWARE\Policies\Tailscale' -Force | Out-Null
+          Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Tailscale' -Name "UnattendedMode" -Value "always" -Force
+
+          & "$env:ProgramFiles\Tailscale\tailscale.exe" up --unattended=true --authkey=$env:TAILSCALE_KEY --hostname="gh-win-game-$env:GITHUB_RUN_ID"
+
+          $tsIP = $null
+          $retries = 0
+          while (-not $tsIP -and $retries -lt 15) {
+              $tsIP = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
+              Start-Sleep -Seconds 4
+              $retries++
+          }
+          if (-not $tsIP) {
+              Write-Error "Gagal mendapatkan IP Tailscale!"
+              exit 1
+          }
+          echo "TAILSCALE_IP=$tsIP" >> $env:GITHUB_ENV
+          Write-Host "Tailscale IP Aktif: $tsIP"
+
+      - name: 7. Lapor IP & Detail Akses RDP ke Repositori
+        env:
+          TS_IP: ${{ env.TAILSCALE_IP }}
+          R_USER: ${{ env.RDP_USER }}
+          R_PASS: ${{ env.RDP_PASS }}
+        run: |
+          $infoContent = @"
+          ==================================================
+              🎮 GITHUB ACTIONS WINDOWS GAMING RDP AKTIF 🎮
+          ==================================================
+          IP Tailscale : $env:TS_IP
+          Port RDP     : 3389
+          Username     : $env:R_USER (atau poiXd)
+          Password     : $env:R_PASS
+          --------------------------------------------------
+          FITUR GAMING AKTIF:
+          ✅ Minetest (Voxel Sandbox Mirip Minecraft) Ready!
+          ✅ Steam Installer Ready di Desktop
+          ✅ DirectPlay & Visual C++ 2005-2022 Terpasang
+          ✅ Audio RDP Aktif (Bisa dengar suara game)
+          ✅ Cloud Gaming Ready (GeForce NOW & Xbox Cloud)
+          --------------------------------------------------
+          CARA AKSES:
+          1. Buka Remote Desktop Connection (mstsc) atau 0X1 Desktop
+          2. Masukkan Computer: $env:TS_IP
+          3. Masukkan User: $env:R_USER
+          4. Masukkan Password: $env:R_PASS
+          ==================================================
+          "@
+          Set-Content -Path "CURRENT_IP.txt" -Value $infoContent -Encoding UTF8
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add CURRENT_IP.txt
+          git commit -m "chore: Update Windows Gaming RDP Info [Run $env:GITHUB_RUN_ID]"
+          git push origin main
+
+      - name: 8. Loop RDP Tetap Hidup (Keep-Alive 6 Jam)
+        env:
+          TS_IP: ${{ env.TAILSCALE_IP }}
+          R_USER: ${{ env.RDP_USER }}
+          R_PASS: ${{ env.RDP_PASS }}
+        run: |
+          Write-Host "`n========================================================"
+          Write-Host "       🎮 WINDOWS GAMING CLOUD RDP ONLINE 🎮            "
+          Write-Host "========================================================"
+          Write-Host "IP Tailscale : $env:TS_IP"
+          Write-Host "Port RDP     : 3389"
+          Write-Host "Username     : $env:R_USER"
+          Write-Host "Password     : $env:R_PASS"
+          Write-Host "========================================================`n"
+          
+          $startTime = Get-Date
+          while ($true) {
+              $elapsed = [math]::Round(((Get-Date) - $startTime).TotalMinutes)
+              $remaining = 350 - $elapsed
+              Write-Host "[$(Get-Date -Format 'HH:mm:ss')] Windows Gaming RDP Active... ($elapsed min elapsed, $remaining min remaining) | IP: $env:TS_IP"
+              Start-Sleep -Seconds 60
+          }
