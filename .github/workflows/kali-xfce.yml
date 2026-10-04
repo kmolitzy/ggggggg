@@ -34,27 +34,27 @@ jobs:
           echo "TAILSCALE_IP=$TS_IP" >> $GITHUB_ENV
           echo "Tailscale IP Aktif: $TS_IP"
 
-      - name: 3. Bangun & Jalankan Kali Linux Native XRDP (Full Artwork + Wallpaper + SVG Icons)
+      - name: 3. Bangun & Jalankan Kali Linux Native XRDP (Full UI, Wallpaper, Panel & Ikon)
         run: |
           cat <<'EOF' > entrypoint.sh
           #!/bin/bash
           set -e
 
-          # 1. Siapkan direktori sistem
           mkdir -p /var/run/dbus /var/run/xrdp /tmp/.X11-unix
           chmod 1777 /tmp/.X11-unix
           dbus-uuidgen --ensure=/etc/machine-id 2>/dev/null || true
           service dbus start || true
 
-          # 2. Pastikan file log xrdp ada
+          # Unduh wallpaper resmi Kali Linux 2025 berkualitas tinggi
+          mkdir -p /usr/share/backgrounds/kali
+          curl -fsSL "https://www.kali.org/wallpapers/images/2025/kali-oleo.png" -o /usr/share/backgrounds/kali/kali-wallpaper.png 2>/dev/null || true
+
           touch /var/log/xrdp.log /var/log/xrdp-sesman.log
           chmod 666 /var/log/xrdp.log /var/log/xrdp-sesman.log
 
-          # 3. Jalankan xrdp & xrdp-sesman resmi Kali
           echo "Memulai xrdp-sesman & xrdp daemon..."
           /etc/init.d/xrdp start
 
-          # 4. Verifikasi port 3389 aktif
           for i in {1..20}; do
             if netstat -tlpn 2>/dev/null | grep -q ":3389"; then
               echo "xrdp port 3389 BERHASIL LISTENING!"
@@ -68,36 +68,95 @@ jobs:
           EOF
           chmod +x entrypoint.sh
 
-          # Script autostart untuk memastikan wallpaper & tema aktif begitu user login
-          cat <<'EOF' > apply-kali-theme.sh
+          # Script startwm.sh yang bertanggung jawab meluncurkan SELURUH antarmuka GUI saat login RDP
+          cat <<'EOF' > startwm.sh
           #!/bin/bash
-          sleep 1
+          export DISPLAY=$DISPLAY
+          export XDG_CURRENT_DESKTOP=XFCE
+          export DESKTOP_SESSION=xfce
+          export LIBGL_ALWAYS_SOFTWARE=1
+          export GDK_BACKEND=x11
+          export GTK_THEME=Kali-Dark
+          export QT_QPA_PLATFORMTHEME=gtk2
 
-          # Cari file wallpaper resmi Kali Linux
-          WP=$(find /usr/share/backgrounds -type f \( -name "*.png" -o -name "*.jpg" \) 2>/dev/null | grep -iE 'kali-16x9|kali-dragon|kali-blue' | head -n 1)
-          if [ -z "$WP" ]; then
-            WP="/usr/share/backgrounds/kali-16x9/default"
+          # Siapkan runtime dir & D-Bus session
+          export XDG_RUNTIME_DIR="/tmp/runtime-$USER"
+          mkdir -p "$XDG_RUNTIME_DIR"
+          chmod 700 "$XDG_RUNTIME_DIR"
+
+          if [ -z "$DBUS_SESSION_BUS_ADDRESS" ]; then
+            eval $(dbus-launch --sh-syntax)
           fi
 
-          # Terapkan wallpaper ke semua monitor XFCE
-          for prop in $(xfconf-query -c xfce4-desktop -l 2>/dev/null | grep last-image); do
-            xfconf-query -c xfce4-desktop -p "$prop" -s "$WP" 2>/dev/null || true
-          done
+          # Matikan blanking layar & DPMS
+          xset s off 2>/dev/null || true
+          xset -dpms 2>/dev/null || true
+          xset s noblank 2>/dev/null || true
 
-          # Paksa tema Kali-Dark & Flat-Remix icon theme
+          # Path wallpaper resmi
+          WP="/usr/share/backgrounds/kali/kali-wallpaper.png"
+          if [ ! -s "$WP" ]; then
+            WP=$(find /usr/share/backgrounds -type f \( -name "*.png" -o -name "*.jpg" \) 2>/dev/null | grep -i kali | head -n 1)
+          fi
+
+          # Warnai background terlebih dahulu agar tidak hitam pekat
+          xsetroot -solid "#1e1e2e" 2>/dev/null || true
+
+          # Terapkan Tema Gelap Kali & Icon Theme
           xfconf-query -c xsettings -p /Net/ThemeName -s "Kali-Dark" --create -t string 2>/dev/null || true
           xfconf-query -c xsettings -p /Net/IconThemeName -s "Flat-Remix-Blue-Dark" --create -t string 2>/dev/null || true
+          xfconf-query -c xsettings -p /Net/IconThemeName -s "Papirus-Dark" --create -t string 2>/dev/null || true
           xfconf-query -c xfwm4 -p /general/theme -s "Kali-Dark" --create -t string 2>/dev/null || true
           xfconf-query -c xfwm4 -p /general/use_compositing -s false --create -t bool 2>/dev/null || true
+
+          # Terapkan Wallpaper ke semua monitor yang dideteksi XFCE
+          for m in monitor0 monitorrdp0 monitorX11-0 monitordefault; do
+            xfconf-query -c xfce4-desktop -p "/backdrop/screen0/$m/workspace0/color-style" -s 0 --create -t int 2>/dev/null || true
+            xfconf-query -c xfce4-desktop -p "/backdrop/screen0/$m/workspace0/image-style" -s 5 --create -t int 2>/dev/null || true
+            xfconf-query -c xfce4-desktop -p "/backdrop/screen0/$m/workspace0/last-image" -s "$WP" --create -t string 2>/dev/null || true
+          done
+
+          # Jalankan Settings Daemon (WAJIB agar tema dan ikon terbaca)
+          xfsettingsd --replace &
+          sleep 1
+
+          # Jalankan Window Manager (WAJIB agar ada titlebar & jendela bisa digeser)
+          xfwm4 --compositor=off --replace &
+          sleep 1
+
+          # Jalankan Panel Atas (Menu Naga Whisker + Taskbar + Jam)
+          if [ ! -f "$HOME/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml" ]; then
+            mkdir -p "$HOME/.config/xfce4/xfconf/xfce-perchannel-xml"
+            cp /etc/xdg/xfce4/panel/default.xml "$HOME/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml" 2>/dev/null || true
+          fi
+          xfce4-panel --disable-wm-check &
+          sleep 1
+
+          # Jalankan Desktop Manager (Ikon Desktop & Wallpaper)
+          xfdesktop --disable-wm-check &
+
+          # Background Loop Supervisor: Pantau terus agar GUI tidak hilang
+          while true; do
+            sleep 4
+            if ! pgrep -x "xfwm4" >/dev/null 2>&1; then
+              xfwm4 --compositor=off --replace &
+            fi
+            if ! pgrep -x "xfce4-panel" >/dev/null 2>&1; then
+              xfce4-panel --disable-wm-check &
+            fi
+            if ! pgrep -x "xfdesktop" >/dev/null 2>&1; then
+              xfdesktop --disable-wm-check &
+            fi
+          done
           EOF
-          chmod +x apply-kali-theme.sh
+          chmod +x startwm.sh
 
           cat <<'EOF' > Dockerfile
           FROM kalilinux/kali-rolling:latest
 
           ENV DEBIAN_FRONTEND=noninteractive
 
-          # 1. Pasang Desktop XFCE Resmi Kali, Full Wallpapers, SVG Loader, Icon Themes, xrdp & xorgxrdp
+          # Pasang XFCE, Tooling, SVG Renderers, Icon Themes, xorg & xrdp
           RUN apt-get update && \
               apt-get install -y \
                 kali-desktop-xfce \
@@ -129,45 +188,24 @@ jobs:
               apt-get clean && \
               rm -rf /var/lib/apt/lists/*
 
-          # 2. Buat user kali dengan hak sudo penuh
+          # Buat user kali dengan hak sudo penuh
           RUN useradd -m -s /bin/bash -u 1000 kali && \
               echo "kali:pochi@333" | chpasswd && \
               echo "kali ALL=(ALL) ALL" >> /etc/sudoers && \
               adduser kali ssl-cert
 
-          # 3. Pra-konfigurasi Wallpaper & Tema XFCE (Mencegah Layar Hitam & Ikon Hilang)
-          RUN mkdir -p /home/kali/.config/xfce4/xfconf/xfce-perchannel-xml /home/kali/.config/autostart
+          # Pasang startwm.sh & link ke .xsession
+          COPY startwm.sh /etc/xrdp/startwm.sh
+          RUN chmod +x /etc/xrdp/startwm.sh && \
+              ln -sf /etc/xrdp/startwm.sh /home/kali/.xsession && \
+              chown kali:kali /home/kali/.xsession
 
-          # Pre-create xfce4-desktop.xml dengan wallpaper resmi Kali
-          RUN printf '<?xml version="1.0" encoding="UTF-8"?>\n<channel name="xfce4-desktop" version="1.0">\n  <property name="backdrop" type="empty">\n    <property name="screen0" type="empty">\n      <property name="monitor0" type="empty">\n        <property name="workspace0" type="empty">\n          <property name="color-style" type="int" value="0"/>\n          <property name="image-style" type="int" value="5"/>\n          <property name="last-image" type="string" value="/usr/share/backgrounds/kali-16x9/default"/>\n        </property>\n      </property>\n      <property name="monitorrdp0" type="empty">\n        <property name="workspace0" type="empty">\n          <property name="color-style" type="int" value="0"/>\n          <property name="image-style" type="int" value="5"/>\n          <property name="last-image" type="string" value="/usr/share/backgrounds/kali-16x9/default"/>\n        </property>\n      </property>\n      <property name="monitordefault" type="empty">\n        <property name="workspace0" type="empty">\n          <property name="color-style" type="int" value="0"/>\n          <property name="image-style" type="int" value="5"/>\n          <property name="last-image" type="string" value="/usr/share/backgrounds/kali-16x9/default"/>\n        </property>\n      </property>\n    </property>\n  </property>\n</channel>\n' > /home/kali/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-desktop.xml
-
-          # Pre-create xsettings.xml (Tema Kali-Dark & Ikon Lengkap)
-          RUN printf '<?xml version="1.0" encoding="UTF-8"?>\n<channel name="xsettings" version="1.0">\n  <property name="Net" type="empty">\n    <property name="ThemeName" type="string" value="Kali-Dark"/>\n    <property name="IconThemeName" type="string" value="Flat-Remix-Blue-Dark"/>\n    <property name="DoubleClickTime" type="int" value="400"/>\n    <property name="CursorThemeName" type="string" value="Kali-Dark"/>\n  </property>\n</channel>\n' > /home/kali/.config/xfce4/xfconf/xfce-perchannel-xml/xsettings.xml
-
-          # Pre-create xfwm4.xml (Window Manager tanpa compositing)
-          RUN printf '<?xml version="1.0" encoding="UTF-8"?>\n<channel name="xfwm4" version="1.0">\n  <property name="general" type="empty">\n    <property name="theme" type="string" value="Kali-Dark"/>\n    <property name="use_compositing" type="bool" value="false"/>\n  </property>\n</channel>\n' > /home/kali/.config/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml
-
-          # Pre-create xfce4-panel.xml (Salin konfigurasi panel bawaan Kali agar panel atas muncul otomatis)
-          RUN cp /etc/xdg/xfce4/panel/default.xml /home/kali/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml 2>/dev/null || true
-
-          # 4. Pasang Script Autostart Wallpaper
-          COPY apply-kali-theme.sh /usr/local/bin/apply-kali-theme.sh
-          RUN chmod +x /usr/local/bin/apply-kali-theme.sh && \
-              printf '[Desktop Entry]\nType=Application\nExec=/usr/local/bin/apply-kali-theme.sh\nHidden=false\nNoDisplay=false\nX-GNOME-Autostart-enabled=true\nName=Apply Kali Theme\n' > /home/kali/.config/autostart/apply-theme.desktop
-
-          # 5. Konfigurasi Sesi xrdp
-          RUN echo "exec dbus-run-session -- startxfce4" > /home/kali/.xsession && \
-              chmod +x /home/kali/.xsession
-
-          RUN printf '#!/bin/sh\nif [ -r /etc/default/locale ]; then\n  . /etc/default/locale\n  export LANG LANGUAGE\nfi\nunset DBUS_SESSION_BUS_ADDRESS\nunset XDG_RUNTIME_DIR\nexport XDG_CURRENT_DESKTOP=XFCE\nexport DESKTOP_SESSION=xfce\nexec dbus-run-session -- startxfce4\n' > /etc/xrdp/startwm.sh && \
-              chmod +x /etc/xrdp/startwm.sh
-
-          # 6. Pasang OpenCode CLI & 9Router
+          # Pasang OpenCode CLI & 9Router
           RUN curl -fsSL https://github.com/anomalyco/opencode/releases/latest/download/opencode-linux-x64.tar.gz | tar -xz -C /usr/local/bin && \
               chmod +x /usr/local/bin/opencode && \
               npm install -g 9router
 
-          # 7. Buat Desktop Shortcuts Lengkap dengan Icon Resmi
+          # Buat Desktop Shortcuts dengan Icon Resmi
           RUN mkdir -p /home/kali/Desktop && \
               echo '[Desktop Entry]\nVersion=1.0\nType=Application\nName=OpenCode Agent\nComment=Terminal AI Coding Agent\nExec=xfce4-terminal -T "OpenCode AI Agent" -e "opencode"\nIcon=utilities-terminal\nTerminal=false\nCategories=Development;' > /home/kali/Desktop/OpenCode.desktop && \
               echo '[Desktop Entry]\nVersion=1.0\nType=Application\nName=9Router Gateway\nComment=AI Gateway for LLMs\nExec=xfce4-terminal -T "9Router Gateway" -e "9router"\nIcon=network-wired\nTerminal=false\nCategories=Network;' > /home/kali/Desktop/9Router.desktop && \
@@ -186,10 +224,9 @@ jobs:
           sudo systemctl stop xrdp 2>/dev/null || true
 
           docker build -t kali-native-rdp .
-          # JALANKAN DENGAN --shm-size 2g AGAR BUFFER GRAFIS XORG TIDAK CRASH
+          # Shared Memory 2GB untuk menjamin buffer grafis tidak pernah crash
           docker run -d --name kali-desktop --net=host --privileged --shm-size 2g kali-native-rdp
 
-          # Verifikasi port 3389 di host
           echo "Memverifikasi port 3389..."
           for i in {1..30}; do
             if sudo netstat -tlpn 2>/dev/null | grep -q ":3389"; then
@@ -215,14 +252,15 @@ jobs:
           Desktop           : XFCE Official (ORI)
           User              : kali
           Password          : pochi@333
-          Driver            : Native xorgxrdp (Full Artwork & Icons)
+          Driver            : Native xorgxrdp (Supervisor UI Mode)
           --------------------------------------------------
           FITUR SIAP PAKAI:
           ✅ OpenCode CLI (AI Coding Agent)
           ✅ 9Router (AI Gateway Router)
-          ✅ Full Kali Wallpapers (Bukan layar hitam kosong)
-          ✅ librsvg2 SVG Icons (Ikon grafis utuh & bukan cuma teks)
+          ✅ Full Kali Wallpaper 2025
+          ✅ Full Icon Rendering (librsvg2 + Papirus/Flat-Remix)
           ✅ Official Kali Panel (Whisker Dragon Menu & Taskbar)
+          ✅ Window Manager (xfwm4 tanpa OpenGL crash)
           ✅ 2GB Shared Memory (Anti crash saat render)
           --------------------------------------------------
           CARA AKSES:
