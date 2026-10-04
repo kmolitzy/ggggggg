@@ -40,50 +40,38 @@ jobs:
           netsh advfirewall firewall add rule name="RDP-Tailscale" dir=in action=allow protocol=TCP localport=3389
           Restart-Service -Name TermService -Force
 
-      - name: 3. Buat Akun RDP Administrator
+      - name: 3. Buat Akun RDP Windows
         env:
           INPUT_PASS: ${{ github.event.inputs.rdp_password }}
         run: |
-          $username = "Administrator"
+          $username = "poiXd"
           $password = if ($env:INPUT_PASS) { $env:INPUT_PASS } else { "pochi@333" }
 
-          # Aktifkan user Administrator bawaan & atur password
-          $adminUser = [ADSI]"WinNT://./Administrator,user"
-          $adminUser.SetPassword($password)
-          $adminUser.UserFlags = 65536 # DONT_EXPIRE_PASSWORD
-          $adminUser.SetInfo()
-
-          # Buat user cadangan 'poiXd'
           $securePass = ConvertTo-SecureString $password -AsPlainText -Force
-          if (-not (Get-LocalUser -Name "poiXd" -ErrorAction SilentlyContinue)) {
-              New-LocalUser -Name "poiXd" -Password $securePass -AccountNeverExpires
-              Add-LocalGroupMember -Group "Administrators" -Member "poiXd"
-              Add-LocalGroupMember -Group "Remote Desktop Users" -Member "poiXd"
+          if (-not (Get-LocalUser -Name $username -ErrorAction SilentlyContinue)) {
+              New-LocalUser -Name $username -Password $securePass -AccountNeverExpires
           } else {
-              Set-LocalUser -Name "poiXd" -Password $securePass
+              Set-LocalUser -Name $username -Password $securePass
           }
+          Add-LocalGroupMember -Group "Administrators" -Member $username -ErrorAction SilentlyContinue
+          Add-LocalGroupMember -Group "Remote Desktop Users" -Member $username -ErrorAction SilentlyContinue
 
-          echo "RDP_USER=Administrator" >> $env:GITHUB_ENV
+          echo "RDP_USER=$username" >> $env:GITHUB_ENV
           echo "RDP_PASS=$password" >> $env:GITHUB_ENV
 
-      - name: 4. Optimasi Gaming (DirectPlay, C++ Runtimes & DirectX WARP)
+      - name: 4. Optimasi Gaming (DirectPlay, C++ Runtimes & DirectX)
         run: |
           Write-Host "=== Memasang DirectX & Runtime Gaming ==="
-          # Aktifkan DirectPlay untuk game klasik/retro
           dism /online /enable-feature /featurename:DirectPlay /all /norestart
-
-          # Pasang Visual C++ All Runtimes via Chocolatey agar tidak missing dll
           choco install vcredist-all -y --no-progress
           choco install 7zip -y --no-progress
 
       - name: 5. Pasang Game & Game Hub di Desktop
         run: |
           Write-Host "=== Memasang Game & Emulator di Desktop ==="
-          $desktopPath = "C:\Users\Administrator\Desktop"
-          if (-not (Test-Path $desktopPath)) { New-Item -ItemType Directory -Path $desktopPath -Force }
           $publicDesktop = "C:\Users\Public\Desktop"
 
-          # 1. Unduh Minetest / Luanti (Sandbox Voxel Game mirip Minecraft, lancar di CPU!)
+          # 1. Unduh Minetest / Luanti (Sandbox Mirip Minecraft, jalan mulus di CPU!)
           Write-Host "Mengunduh Minetest (Minecraft Alternative)..."
           $minetestZip = "$env:TEMP\minetest.zip"
           $minetestUrl = "https://github.com/minetest/minetest/releases/download/5.9.1/minetest-5.9.1-win64.zip"
@@ -138,7 +126,6 @@ jobs:
           Start-Process msiexec.exe -ArgumentList "/i", "`"$installerPath`"", "/quiet", "/norestart", "TS_NOLAUNCH=1" -Wait
           Remove-Item $installerPath -Force
 
-          # Kebijakan Unattended agar tidak DC saat RDP ditutup
           New-Item -Path 'HKLM:\SOFTWARE\Policies\Tailscale' -Force | Out-Null
           Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Tailscale' -Name "UnattendedMode" -Value "always" -Force
 
@@ -170,7 +157,7 @@ jobs:
           ==================================================
           IP Tailscale : $env:TS_IP
           Port RDP     : 3389
-          Username     : $env:R_USER (atau poiXd)
+          Username     : $env:R_USER
           Password     : $env:R_PASS
           --------------------------------------------------
           FITUR GAMING AKTIF:
