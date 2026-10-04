@@ -112,8 +112,10 @@ jobs:
           $retroShortcut.Description = "Ribuan Game Retro Siap Main Langsung"
           $retroShortcut.Save()
 
-          # 5. Pasang Google Chrome
-          choco install googlechrome -y --no-progress
+          # 5. Shortcut Microsoft Edge / Browser
+          $edgeShortcut = $wshShell.CreateShortcut("$publicDesktop\Microsoft Edge Browser.lnk")
+          $edgeShortcut.TargetPath = "msedge.exe"
+          $edgeShortcut.Save()
 
       - name: 6. Unduh, Pasang & Hubungkan Tailscale
         env:
