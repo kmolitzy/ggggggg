@@ -1,21 +1,26 @@
 ==================================================
-    🎮 GITHUB ACTIONS WINDOWS GAMING RDP AKTIF 🎮
+       🐉 KALI LINUX OFFICIAL XFCE RDP AKTIF 🐉
 ==================================================
-IP Tailscale : 100.75.63.113
-Port RDP     : 3389
-Username     : poiXd
-Password     : pochi@333
+IP Tailscale      : 100.113.208.66
+Hostname Tailnet  : kali-runner-37175378711
+Port RDP          : 3389 (mstsc / 0X1 Desktop)
+Port noVNC Web    : 6080 (Buka di browser)
+OS                : Kali Linux Official (Rolling)
+Desktop           : XFCE Official (ORI)
+User              : kali
+Password          : pochi@333
 --------------------------------------------------
-FITUR GAMING AKTIF:
-✅ Minetest (Voxel Sandbox Mirip Minecraft) Ready!
-✅ Steam Installer Ready di Desktop
-✅ DirectPlay & Visual C++ 2005-2022 Terpasang
-✅ Audio RDP Aktif (Bisa dengar suara game)
-✅ Cloud Gaming Ready (GeForce NOW & Xbox Cloud)
+FITUR SIAP PAKAI:
+✅ OpenCode CLI (AI Coding Agent)
+✅ 9Router (AI Gateway Router)
+✅ Anti-Black-Screen (DPMS & Screensaver Purged)
+✅ Desktop Shortcuts Ready di Layar
 --------------------------------------------------
 CARA AKSES:
-1. Buka Remote Desktop Connection (mstsc) atau 0X1 Desktop
-2. Masukkan Computer: 100.75.63.113
-3. Masukkan User: poiXd
-4. Masukkan Password: pochi@333
+1. RDP Native (mstsc / 0X1 Desktop):
+   Host: 100.113.208.66:3389
+   User: kali | Pass: pochi@333
+
+2. Web Desktop Browser (noVNC Tanpa Black Screen):
+   http://100.113.208.66:6080/vnc.html
 ==================================================
